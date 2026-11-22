@@ -1,0 +1,10 @@
+# 本物の設定ファイルはコミットしない (.env.example だけを共有する)
+.env
+.env.*
+!.env.example
+
+# 実行時に生まれるもの
+data/
+__pycache__/
+*.pyc
+.venv/

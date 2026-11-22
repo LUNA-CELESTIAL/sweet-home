@@ -25,7 +25,8 @@ def compose(member: dict, slot: str, weather: str, seed: str | None) -> str:
     if slot == "morning":
         text = f"おはようございます、{name}です。今日は{weather}。"
         if seed:
-            text += f"昨日の日記からひとつ。{seed}"
+            fragment = seed["note"] if isinstance(seed, dict) else seed
+            text += f"昨日の日記からひとつ。{fragment}"
         text += f"今日も{member['want']}、そんな一日にしたいです。"
         return text
     text = f"こんばんは、{name}です。今日も一日おつかれさまでした。"

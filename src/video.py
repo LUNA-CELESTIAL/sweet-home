@@ -16,22 +16,35 @@ import urllib.request
 from pathlib import Path
 
 
-def fill_template(node, prompt: str, seed: int):
+def fill_template(node, prompt: str, seed: int, image: str = ""):
     if isinstance(node, dict):
-        return {k: fill_template(v, prompt, seed) for k, v in node.items()}
+        return {k: fill_template(v, prompt, seed, image) for k, v in node.items()}
     if isinstance(node, list):
-        return [fill_template(v, prompt, seed) for v in node]
+        return [fill_template(v, prompt, seed, image) for v in node]
     if isinstance(node, str):
         if node == "{seed}":
             return seed
-        return node.replace("{prompt}", prompt).replace("{seed}", str(seed))
+        return (node.replace("{prompt}", prompt).replace("{seed}", str(seed))
+                .replace("{image}", image))
     return node
 
 
 def build_video_prompt(member: dict, slot: str) -> str:
-    scene = "morning greeting, waving hand, bright room" if slot == "morning" \
-        else "evening greeting, soft lamp light, waving hand"
-    return f"chibi anime girl character {member['name']}, {scene}, gentle smile, 5 seconds, loopable"
+    """Timed H3 prompt built from the member's actual look, so the
+    words never fight the first-frame image."""
+    look = member.get("look", "chibi anime girl")
+    if slot == "morning":
+        action = "waves one hand cheerfully in a morning greeting and smiles at the viewer"
+        light = "soft morning light"
+    else:
+        action = "waves one hand gently in an evening greeting and smiles warmly at the viewer"
+        light = "warm evening light"
+    return (
+        f"Cinematic anime motion, starting from the image of {look}.\n\n"
+        f"00:00-00:02 (SHOT 1): The chibi girl steps forward toward the camera with a lively motion, "
+        f"her hair swaying naturally in {light}.\n\n"
+        f"00:02-00:05 (SHOT 2): She {action}. Creative anime transition, vivid colors, smooth motion."
+    )
 
 
 class ComfyUIClient:
@@ -59,8 +72,10 @@ class ComfyUIClient:
         with urllib.request.urlopen(self.base_url + path, timeout=300) as res:
             return res.read()
 
-    def generate(self, member: dict, slot: str, seed: int, out_path: Path) -> Path:
-        workflow = fill_template(self.workflow, build_video_prompt(member, slot), seed)
+    def generate(self, member: dict, slot: str, seed: int, out_path: Path,
+                 image: str | None = None) -> Path:
+        image = image or f"deformer_{member['id']}.png"
+        workflow = fill_template(self.workflow, build_video_prompt(member, slot), seed, image)
         queued = self._json("/prompt", {"prompt": workflow})
         prompt_id = queued["prompt_id"]
         waited = 0

@@ -19,7 +19,7 @@
  },
  "114": {
   "inputs": {
-   "image": "deformer_luna.png"
+   "image": "{image}"
   },
   "class_type": "LoadImage",
   "_meta": {
@@ -266,7 +266,7 @@
  },
  "105:104": {
   "inputs": {
-   "prompt": "Cinematic anime motion, starting from the sticker image <Picture 1>.\n\n00:00-00:02 (SHOT 1): The white sticker outline of the chibi girl begins to glow softly. She breaks out of the flat sticker frame, stepping out into a 3D space toward the camera with a lively motion.\n\n00:02-00:05 (SHOT 2): She lands dynamically in the foreground, waves both hands cheerfully, and winks at the viewer as her purple twintails sway naturally. Creative anime transition, vivid colors, smooth motion.",
+   "prompt": "{prompt}",
    "width": [
     "115",
     0

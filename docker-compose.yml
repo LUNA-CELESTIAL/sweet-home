@@ -9,6 +9,7 @@ services:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       VOICEVOX_BASE_URL: "http://host.docker.internal:50021"
       COMFYUI_BASE_URL: "http://host.docker.internal:8188"
+      COMFYUI_WORKFLOW_PATH: "/app/workflows/duty_h3.json"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

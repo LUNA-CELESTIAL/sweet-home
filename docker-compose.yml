@@ -1,0 +1,14 @@
+services:
+  sweet-home:
+    build: .
+    container_name: sweet-home
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Ollama runs on the host; from inside the container it is here:
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./out:/app/out
+      - ./export:/app/export

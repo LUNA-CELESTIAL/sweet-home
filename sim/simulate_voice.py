@@ -24,7 +24,9 @@ CALLS = []
 class Stub(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
-        CALLS.append((u.path, parse_qs(u.query)))
+        length = int(self.headers.get("Content-Length") or 0)
+        body_in = self.rfile.read(length) if length else b""
+        CALLS.append((u.path, parse_qs(u.query), body_in))
         if u.path == "/audio_query":
             body = json.dumps({"stub": True}).encode()
             ctype = "application/json"
@@ -56,8 +58,14 @@ def main():
         assert out and out.read_bytes().startswith(b"RIFF")
         skipped = client.synthesize("stella", "こんばんは。", Path(td) / "stella.wav")
         assert skipped is None
-    speakers = [q["speaker"][0] for _, q in CALLS]
+    speakers = [q["speaker"][0] for _, q, _ in CALLS]
     assert speakers == ["10", "10"], CALLS
+
+    client2 = VoicevoxClient(base, {"sirius": 10})
+    with tempfile.TemporaryDirectory() as td:
+        client2.synthesize("sirius", "嬉しい時は嬉しいって言うのが一番だよ。", Path(td) / "sirius.wav")
+    synth_body = [b for path, _, b in CALLS if path == "/synthesis"][-1]
+    assert b'"volumeScale": 1.15' in synth_body and b'"speedScale": 1.02' in synth_body, synth_body
     server.shutdown()
     print("ALL CHECKS PASSED")
 

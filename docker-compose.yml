@@ -5,8 +5,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # Ollama runs on the host; from inside the container it is here:
+      # Ollama and VOICEVOX run on the host; from inside the container:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      VOICEVOX_BASE_URL: "http://host.docker.internal:50021"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

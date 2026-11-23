@@ -23,6 +23,7 @@ from config import check_live_ready, load_env  # noqa: E402
 from day import run_day  # noqa: E402
 from llm import OllamaClient  # noqa: E402
 from poster import ConsolePoster, DiscordPoster  # noqa: E402
+from voice import VoicevoxClient, speaker_ids_from_config  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -81,11 +82,14 @@ def main():
               "cp .env.example .env (for docker compose, env_file also works).")
         return
     poster, llm, live = build_runtime(cfg)
-    print(f"sweet-home starting (live={live})")
+    ids = speaker_ids_from_config(cfg)
+    voice = (VoicevoxClient(cfg.get("VOICEVOX_BASE_URL", "http://localhost:50021"), ids)
+             if ids else None)
+    print(f"sweet-home starting (live={live}, voice={'on' if voice else 'off'})")
 
     if args.once:
         run_day(llm, poster, datetime.date.today(), "晴れ", DEMO_SEED, DEMO_EVENTS,
-                ROOT / "out", site_export_path=ROOT / "export" / "diary.json")
+                ROOT / "out", site_export_path=ROOT / "export" / "diary.json", voice=voice)
         print("day complete")
         return
 
@@ -98,7 +102,7 @@ def main():
                 # v1: the whole day is produced by the diary-time run in
                 # serve mode trials; per-job split arrives with Step 5.
                 run_day(llm, poster, now.date(), "晴れ", DEMO_SEED, DEMO_EVENTS,
-                        ROOT / "out", site_export_path=ROOT / "export" / "diary.json")
+                        ROOT / "out", site_export_path=ROOT / "export" / "diary.json", voice=voice)
                 done.add(key)
             time.sleep(30)
 

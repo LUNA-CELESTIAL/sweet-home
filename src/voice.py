@@ -10,11 +10,18 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+_PARAMS_PATH = Path(__file__).with_name("voice_params.json")
+VOICE_PARAMS: dict[str, dict] = (
+    json.loads(_PARAMS_PATH.read_text(encoding="utf-8")) if _PARAMS_PATH.exists() else {}
+)
+
 
 class VoicevoxClient:
-    def __init__(self, base_url: str, speaker_ids: dict[str, int]):
+    def __init__(self, base_url: str, speaker_ids: dict[str, int],
+                 params: dict[str, dict] | None = None):
         self.base_url = base_url.rstrip("/")
         self.speaker_ids = speaker_ids
+        self.params = VOICE_PARAMS if params is None else params
 
     def _post(self, path: str, payload: dict | None, params: dict) -> bytes:
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params)}"
@@ -29,6 +36,13 @@ class VoicevoxClient:
         if speaker is None:
             return None
         query = json.loads(self._post("/audio_query", None, {"text": text, "speaker": speaker}))
+        p = self.params.get(member_id, {})
+        if "speed_scale" in p:
+            query["speedScale"] = p["speed_scale"]
+        if "intonation_scale" in p:
+            query["intonationScale"] = p["intonation_scale"]
+        if "volume_scale" in p:
+            query["volumeScale"] = p["volume_scale"]
         wav = self._post("/synthesis", query, {"speaker": speaker})
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(wav)

@@ -29,15 +29,29 @@ def main():
                    "TITLE: 続きが届いた日\nEXCERPT: 昨日の続きが今日の会話になりました。"],
     }
     poster = ConsolePoster()
+
+    class FakeVoice:
+        def __init__(self):
+            self.calls = []
+
+        def synthesize(self, member_id, text, out_path):
+            self.calls.append((member_id, out_path.name))
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(b"RIFFfake")
+            return out_path
+
+    voice = FakeVoice()
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
         result = run_day(FakeLLM(script), poster, datetime.date(2026, 11, 23),
                          "晴れ", DEMO_SEED, DEMO_EVENTS, out,
-                         site_export_path=ROOT / "export" / "diary.json")
+                         site_export_path=ROOT / "export" / "diary.json", voice=voice)
         channels = [p["channel"] for p in poster.posts]
         assert channels == ["duty", "living", "living", "living", "living", "duty", "diary"], channels
         assert (out / "diary-2026-11-23.md").exists() and (out / "diary-site.json").exists()
         assert result["seed"]["topic"] == "Pingツールの続き"
+        assert voice.calls == [("kohaku", "2026-11-23-morning.wav"),
+                               ("stella", "2026-11-23-evening.wav")], voice.calls
     print("ALL CHECKS PASSED")
 
 

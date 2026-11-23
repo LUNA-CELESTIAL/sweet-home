@@ -72,8 +72,24 @@ class ComfyUIClient:
         with urllib.request.urlopen(self.base_url + path, timeout=300) as res:
             return res.read()
 
+    def wait_ready(self, timeout_seconds: int = 180) -> None:
+        """ComfyUI takes a while to open its port after (re)start, and
+        systemd now restarts it automatically — so poll instead of
+        failing on the first connection refused."""
+        waited = 0
+        while True:
+            try:
+                self._json("/system_stats")
+                return
+            except Exception:
+                if waited >= timeout_seconds:
+                    raise
+                time.sleep(5)
+                waited += 5
+
     def generate(self, member: dict, slot: str, seed: int, out_path: Path,
                  image: str | None = None) -> Path:
+        self.wait_ready()
         image = image or f"deformer_{member['id']}.png"
         workflow = fill_template(self.workflow, build_video_prompt(member, slot), seed, image)
         queued = self._json("/prompt", {"prompt": workflow})

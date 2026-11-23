@@ -26,7 +26,8 @@ SEED = {
 }
 
 SCRIPT = {
-    "luna": ["ステラ、昨日のPingツールの話、途中で終わってたね。必要なものだけ選ぶって言ってたのが気になってるの。"],
+    "luna": ["台詞はひとつだけ書きます。例えば「様子を見ます」のような形です。\n"
+             "「ステラ、昨日のPingツールの話、途中で終わってたね。必要なものだけ選ぶって言ってたのが気になってるの。」"],
     "stella": ["覚えててくれたのね。機能が多いほど、使わないものを置いていく選び方に美学を感じるのよ。",
                "ふふ、決まりね。静かな回線で、必要なものだけ。"],
     "spica": ["私はWake-on-LANでお家のPCを起こすところを試してみたいな。速度テストで回線も測れるし。"],
@@ -41,6 +42,8 @@ def main():
     print(f"\nevent pool: {pool_line}")
 
     assert len(transcript) == 4 and len(llm.prompts) == 4
+    assert transcript[0]["text"].startswith("ステラ、昨日のPingツール"), "noisy output was not reduced to the line"
+    assert "例えば" not in transcript[0]["text"]
     for prompt, turn in zip(llm.prompts, transcript):
         assert SEED["quote"] in prompt, "seed quote must reach every call verbatim"
         speaker_wants = {p["id"]: p["want"] for p in PERSONAS}
@@ -49,7 +52,7 @@ def main():
         for pid, want in speaker_wants.items():
             if pid != turn["member"]:
                 assert want not in prompt, f"prompt leaked another persona slice: {pid}"
-    assert SCRIPT["luna"][0] in llm.prompts[1], "second speaker must see the first line"
+    assert transcript[0]["text"] in llm.prompts[1], "second speaker must see the first line"
     assert "Pingツールの続き話をした" in pool_line
     print("ALL CHECKS PASSED")
 

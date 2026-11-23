@@ -23,14 +23,33 @@ def build_packet(seed: dict) -> str:
 
 def build_prompt(packet: str, transcript: list[dict], speaker: dict) -> str:
     lines = [packet, "", f"あなたは{speaker['name']}。やりたいこと: {speaker['want']}"]
+    lines.append(f"あなたの関心の角度: {speaker['angle']}")
+    lines.append(f"しないこと: {speaker['avoid']}")
     lines += [f"声の例: {v}" for v in speaker["voice"]]
     if transcript:
         lines.append("")
         lines.append("これまでの発言:")
         lines += [f"{t['name']}: {t['text']}" for t in transcript]
     lines.append("")
-    lines.append("次のあなたの発言を、台詞ひとつ分だけ書いてください。要約や考察は書かないでください。")
+    lines.append(
+        "次のあなたの発言を、台詞ひとつ分だけ、「」で囲んで書いてください。"
+        "直前の人の言葉に短く反応してから、あなたの関心の角度で続けてください。"
+        "話題の引用をそのまま繰り返さないでください。"
+        "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
+    )
     return "\n".join(lines)
+
+
+def extract_line(raw: str) -> str:
+    """Keep only the utterance. Models sometimes wrap the line in an
+    explanation; the last 「...」 segment is the intended line. Without
+    quotes, fall back to the last non-empty line."""
+    import re
+    quoted = re.findall(r"「([^「」]+)」", raw)
+    if quoted:
+        return quoted[-1].strip()
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
 
 
 def run_session(seed: dict, order: list[str], llm) -> tuple[list[dict], str]:
@@ -40,7 +59,7 @@ def run_session(seed: dict, order: list[str], llm) -> tuple[list[dict], str]:
     transcript: list[dict] = []
     for pid in order:
         speaker = by_id(pid)
-        text = llm.generate(build_prompt(packet, transcript, speaker), pid)
+        text = extract_line(llm.generate(build_prompt(packet, transcript, speaker), pid))
         transcript.append({"member": pid, "name": speaker["name"], "text": text})
     names = "→".join(dict.fromkeys(t["name"] for t in transcript))
     pool_line = f"{seed['topic']}の続き話をした ({names})"

@@ -1,9 +1,10 @@
 """sweet-home resident entry point.
 
 Modes:
-  --once   run today's full day once (poster depends on RUN_MODE)
-  --serve  tick every 30s and run each job when its time comes
-           (duty 09:00 / cluster 10:30 / duty 20:00 / diary 21:30)
+  --once   run today's full day once, back to back (verification)
+  --serve  plan-driven operation: morning duty 07:00, living clusters
+           10:30 / 14:30 / 17:30, evening duty 21:00, diary 21:30,
+           with video pacing and the thermal guard active
 
 Safety: live posting requires RUN_MODE=live AND no placeholder
 values in the required env keys; otherwise the ConsolePoster is
@@ -20,7 +21,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import check_live_ready, load_env  # noqa: E402
-from day import run_day  # noqa: E402
+from day import Day, run_day  # noqa: E402
+from executor import Executor, day_jobs  # noqa: E402
 from llm import OllamaClient  # noqa: E402
 from poster import ConsolePoster, DiscordPoster  # noqa: E402
 from video import ComfyUIClient  # noqa: E402
@@ -101,18 +103,41 @@ def main():
         return
 
     if args.serve:
-        done: set[tuple[str, str]] = set()
+        # Plan-driven: each part of the day runs at its planned time,
+        # heavy jobs keep their interval (enforced again inside the
+        # video client), and the thermal guard can drop skippable
+        # heavy work. Jobs whose time has already passed run at once,
+        # so a mid-day start still completes the day.
+        pace = int(cfg.get("VIDEO_MIN_INTERVAL_MINUTES", "30")) * 60
+        if video is not None:
+            video.pace_seconds = pace
+
+        def now_minutes() -> float:
+            n = datetime.datetime.now()
+            return n.hour * 60 + n.minute + n.second / 60
+
+        def temp_c() -> float:
+            temps = []
+            for zone in Path("/sys/class/thermal").glob("thermal_zone*/temp"):
+                try:
+                    temps.append(int(zone.read_text().strip()) / 1000)
+                except Exception:
+                    pass
+            return max(temps) if temps else 40.0
+
         while True:
+            today = datetime.date.today()
+            day = Day(llm, poster, today, "晴れ", DEMO_SEED, DEMO_EVENTS,
+                      ROOT / "out", voice=voice, video=video)
+            executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
+                                temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")))
+            executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"))
+            print(f"day complete ({today})")
+            # sleep to just past midnight, then build the next day
             now = datetime.datetime.now()
-            key = (now.date().isoformat(), f"{now.hour:02d}:{now.minute:02d}")
-            if key not in done and (now.hour, now.minute) in {(21, 30)}:
-                # v1: the whole day is produced by the diary-time run in
-                # serve mode trials; per-job split arrives with Step 5.
-                run_day(llm, poster, now.date(), "晴れ", DEMO_SEED, DEMO_EVENTS,
-                        ROOT / "out", site_export_path=ROOT / "export" / "diary.json",
-                        voice=voice, video=video)
-                done.add(key)
-            time.sleep(30)
+            nxt = (now + datetime.timedelta(days=1)).replace(hour=0, minute=5,
+                                                             second=0, microsecond=0)
+            time.sleep(max(60.0, (nxt - now).total_seconds()))
 
 
 if __name__ == "__main__":

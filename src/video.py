@@ -49,13 +49,21 @@ def build_video_prompt(member: dict, slot: str) -> str:
 
 class ComfyUIClient:
     def __init__(self, base_url: str, workflow_path: str, poll_seconds: int = 10,
-                 timeout_seconds: int = 1800):
+                 timeout_seconds: int = 1800, pace_seconds: int = 0,
+                 clock=time.monotonic, sleep=time.sleep):
         if not workflow_path or workflow_path.startswith("（"):
             raise ValueError("COMFYUI_WORKFLOW_PATH is unset or still a placeholder")
         self.base_url = base_url.rstrip("/")
         self.workflow = json.loads(Path(workflow_path).read_text(encoding="utf-8"))
         self.poll_seconds = poll_seconds
         self.timeout_seconds = timeout_seconds
+        # Execution-level spacing: however the jobs were planned, two
+        # video generations never fire back to back — generate() waits
+        # out the remainder of the interval. 0 disables (verification).
+        self.pace_seconds = pace_seconds
+        self._clock = clock
+        self._sleep = sleep
+        self._last_gen_at: float | None = None
 
     def _json(self, path: str, payload: dict | None = None):
         data = json.dumps(payload).encode() if payload is not None else None
@@ -89,6 +97,10 @@ class ComfyUIClient:
 
     def generate(self, member: dict, slot: str, seed: int, out_path: Path,
                  image: str | None = None) -> Path:
+        if self.pace_seconds > 0 and self._last_gen_at is not None:
+            remaining = self.pace_seconds - (self._clock() - self._last_gen_at)
+            if remaining > 0:
+                self._sleep(remaining)
         self.wait_ready()
         image = image or f"deformer_{member['id']}.png"
         workflow = fill_template(self.workflow, build_video_prompt(member, slot), seed, image)
@@ -109,6 +121,7 @@ class ComfyUIClient:
                              "type": f.get("type", "output")})
                         out_path.parent.mkdir(parents=True, exist_ok=True)
                         out_path.write_bytes(self._bytes(f"/view?{q}"))
+                        self._last_gen_at = self._clock()
                         return out_path
             if waited >= self.timeout_seconds:
                 raise TimeoutError(f"ComfyUI job {prompt_id} did not finish")

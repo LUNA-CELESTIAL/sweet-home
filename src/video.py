@@ -10,6 +10,7 @@ rules, never call this directly in a loop.
 
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -45,8 +46,12 @@ class ComfyUIClient:
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(self.base_url + path, data=data,
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as res:
-            return json.loads(res.read())
+        try:
+            with urllib.request.urlopen(req, timeout=60) as res:
+                return json.loads(res.read())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", "replace")[:2000]
+            raise RuntimeError(f"ComfyUI {path} -> HTTP {e.code}: {body}") from e
 
     def _bytes(self, path: str) -> bytes:
         with urllib.request.urlopen(self.base_url + path, timeout=300) as res:

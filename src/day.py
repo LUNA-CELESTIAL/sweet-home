@@ -20,22 +20,28 @@ DEFAULT_CLUSTER_ORDER = ["luna", "stella", "spica", "stella"]
 def run_day(llm, poster, date: datetime.date, weather: str,
             yesterday_seed: dict | None, events: list[dict],
             out_dir: Path, cluster_order: list[str] | None = None,
-            site_export_path: Path | None = None, voice=None) -> dict:
+            site_export_path: Path | None = None, voice=None, video=None) -> dict:
     result = {}
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    def maybe_voice(member: dict, slot: str, text: str):
-        if voice is None:
-            return
-        path = voice.synthesize(member["id"], text,
-                                out_dir / "voice" / f"{date.isoformat()}-{slot}.wav")
-        if path:
-            result.setdefault("voice", {})[slot] = str(path)
+    def duty_with_media(member: dict, slot: str, text: str):
+        voice_path = video_path = None
+        if voice is not None:
+            voice_path = voice.synthesize(
+                member["id"], text, out_dir / "voice" / f"{date.isoformat()}-{slot}.wav")
+            if voice_path:
+                result.setdefault("voice", {})[slot] = str(voice_path)
+        if video is not None:
+            video_path = video.generate(
+                member, slot, date.toordinal() + (0 if slot == "morning" else 1),
+                out_dir / "video" / f"{date.isoformat()}-{slot}.mp4")
+            if video_path:
+                result.setdefault("video", {})[slot] = str(video_path)
+        poster.post("duty", member["name"], text, file_path=video_path or voice_path)
 
     morning_member = duty_member(date, "morning")
     morning = duty_text(llm, morning_member, "morning", weather, yesterday_seed)
-    poster.post("duty", morning_member["name"], morning)
-    maybe_voice(morning_member, "morning", morning)
+    duty_with_media(morning_member, "morning", morning)
     result["morning"] = morning
 
     if yesterday_seed:
@@ -48,8 +54,7 @@ def run_day(llm, poster, date: datetime.date, weather: str,
 
     evening_member = duty_member(date, "evening")
     evening = duty_text(llm, evening_member, "evening", "", None)
-    poster.post("duty", evening_member["name"], evening)
-    maybe_voice(evening_member, "evening", evening)
+    duty_with_media(evening_member, "evening", evening)
     result["evening"] = evening
 
     writer = writer_for(date)

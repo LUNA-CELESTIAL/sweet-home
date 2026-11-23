@@ -8,6 +8,7 @@ services:
       # Ollama and VOICEVOX run on the host; from inside the container:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       VOICEVOX_BASE_URL: "http://host.docker.internal:50021"
+      COMFYUI_BASE_URL: "http://host.docker.internal:8188"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

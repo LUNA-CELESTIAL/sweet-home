@@ -22,6 +22,8 @@ def fill_template(node, prompt: str, seed: int):
     if isinstance(node, list):
         return [fill_template(v, prompt, seed) for v in node]
     if isinstance(node, str):
+        if node == "{seed}":
+            return seed
         return node.replace("{prompt}", prompt).replace("{seed}", str(seed))
     return node
 

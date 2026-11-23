@@ -69,7 +69,7 @@ def main():
         out = client.generate({"name": "ステラ"}, "evening", 42, Path(td) / "out.mp4")
         assert out.read_bytes().endswith(b"stub")
         sent = SEEN["prompt"]["prompt"]["1"]["inputs"]
-        assert "ステラ" in sent["text"] and sent["seed"] == "42", sent
+        assert "ステラ" in sent["text"] and sent["seed"] == 42, sent
 
         body, ctype = build_multipart({"content": "こんばんは"}, out)
         assert b"payload_json" in body and b"ftypmp42" in body and "multipart" in ctype

@@ -12,6 +12,7 @@ used and nothing leaves the machine.
 
 import argparse
 import datetime
+import os
 import sys
 import time
 from pathlib import Path
@@ -38,6 +39,21 @@ DEMO_EVENTS = [
 ]
 
 
+def load_config() -> dict | None:
+    """Config from the .env file when present; otherwise from the
+    process environment (docker compose env_file injects values that
+    way, and the .env file itself is never copied into the image)."""
+    env_path = ROOT / ".env"
+    cfg: dict[str, str] = {}
+    if env_path.exists():
+        cfg.update(load_env(env_path))
+    cfg.update({k: v for k, v in os.environ.items()
+                if k.isupper() and (k in cfg or "_" in k)})
+    if "OLLAMA_MODEL" not in cfg and "RUN_MODE" not in cfg:
+        return None
+    return cfg
+
+
 def build_runtime(cfg: dict):
     problems = check_live_ready(cfg)
     live = cfg.get("RUN_MODE") == "live" and not problems
@@ -59,11 +75,11 @@ def main():
     ap.add_argument("--serve", action="store_true")
     args = ap.parse_args()
 
-    env_path = ROOT / ".env"
-    if not env_path.exists():
-        print("No .env found. cp .env.example .env and fill in the values first.")
+    cfg = load_config()
+    if cfg is None:
+        print("No config found: no .env file and no environment variables. "
+              "cp .env.example .env (for docker compose, env_file also works).")
         return
-    cfg = load_env(env_path)
     poster, llm, live = build_runtime(cfg)
     print(f"sweet-home starting (live={live})")
 

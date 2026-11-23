@@ -21,7 +21,7 @@ def build_packet(seed: dict) -> str:
     )
 
 
-def build_prompt(packet: str, transcript: list[dict], speaker: dict) -> str:
+def build_prompt(packet: str, transcript: list[dict], speaker: dict, repeat: bool = False) -> str:
     lines = [packet, "", f"あなたは{speaker['name']}。やりたいこと: {speaker['want']}"]
     lines.append(f"あなたの関心の角度: {speaker['angle']}")
     lines.append(f"しないこと: {speaker['avoid']}")
@@ -37,6 +37,11 @@ def build_prompt(packet: str, transcript: list[dict], speaker: dict) -> str:
         "話題の引用をそのまま繰り返さないでください。"
         "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
     )
+    if repeat:
+        lines.append(
+            "あなたはこの塊で2回目の発言です。さっきの自分の言い回しやモチーフは"
+            "繰り返さず、別の側面から締めてください。"
+        )
     return "\n".join(lines)
 
 
@@ -57,9 +62,12 @@ def run_session(seed: dict, order: list[str], llm) -> tuple[list[dict], str]:
     assert len(order) <= 5, "a cluster is at most 5 turns"
     packet = build_packet(seed)
     transcript: list[dict] = []
+    seen: set[str] = set()
     for pid in order:
         speaker = by_id(pid)
-        text = extract_line(llm.generate(build_prompt(packet, transcript, speaker), pid))
+        prompt = build_prompt(packet, transcript, speaker, repeat=pid in seen)
+        seen.add(pid)
+        text = extract_line(llm.generate(prompt, pid))
         transcript.append({"member": pid, "name": speaker["name"], "text": text})
     names = "→".join(dict.fromkeys(t["name"] for t in transcript))
     pool_line = f"{seed['topic']}の続き話をした ({names})"

@@ -19,20 +19,23 @@ BLOCK_ORDER = ["朝のこと", "昼のこと", "午後のこと", "夕方のこ�
 def _persona_block(p: dict) -> str:
     lines = [f"あなたは{p['name']}。やりたいこと: {p['want']}",
              f"あなたの関心の角度: {p['angle']}", f"しないこと: {p['avoid']}"]
-    lines += [f"声の例: {v}" for v in p["voice"]]
+    lines += [f"声の例 (言い回しの参考。そのまま使わない): {v}" for v in p["voice"]]
     return "\n".join(lines)
 
 
 def duty_text(llm, member: dict, slot: str, weather: str, seed: dict | None) -> str:
     if slot == "morning":
         ask = (f"朝の当番の挨拶を、台詞ひとつ分、「」で囲んで書いてください。天気は{weather}。"
-               "自分の名前と、今日への一言を入れてください。")
+               f"「おはよう、{member['name']}です」のように、自分の名前で名乗ってください。"
+               "今日への一言も入れてください。")
         if seed:
             ask += (f"昨日の日記から、{seed['sourceMember']}の{seed['topic']}の話が"
                     f"途中で終わっていたことも、短く触れてください。")
     else:
         ask = ("夜の当番の挨拶を、台詞ひとつ分、「」で囲んで書いてください。"
-               "自分の名前と、一日へのねぎらいと、明日の朝への一言を入れてください。")
+               f"「こんばんは、{member['name']}です」のように、自分の名前で名乗ってください。"
+               "一日へのねぎらいと、明日の朝への一言を入れてください。"
+               "自分に話しかける形にはしないでください。")
     prompt = _persona_block(member) + "\n\n" + ask + "\n説明や例示は書かないでください。出すのは台詞だけです。"
     return extract_line(llm.generate(prompt, member["id"]))
 

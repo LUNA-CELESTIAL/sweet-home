@@ -25,7 +25,7 @@ def build_prompt(packet: str, transcript: list[dict], speaker: dict, repeat: boo
     lines = [packet, "", f"あなたは{speaker['name']}。やりたいこと: {speaker['want']}"]
     lines.append(f"あなたの関心の角度: {speaker['angle']}")
     lines.append(f"しないこと: {speaker['avoid']}")
-    lines += [f"声の例: {v}" for v in speaker["voice"]]
+    lines += [f"声の例 (言い回しの参考。そのまま使わない): {v}" for v in speaker["voice"]]
     if transcript:
         lines.append("")
         lines.append("これまでの発言:")
@@ -33,7 +33,8 @@ def build_prompt(packet: str, transcript: list[dict], speaker: dict, repeat: boo
     lines.append("")
     lines.append(
         "次のあなたの発言を、台詞ひとつ分だけ、「」で囲んで書いてください。"
-        "直前の人の言葉に短く反応してから、あなたの関心の角度で続けてください。"
+        "直前の人の言葉を受け止めたうえで、同調の相槌だけで終わらせず、"
+        "あなたの関心の角度から新しい内容を一言足してください。"
         "話題の引用をそのまま繰り返さないでください。"
         "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
     )

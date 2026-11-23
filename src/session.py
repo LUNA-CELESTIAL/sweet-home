@@ -58,8 +58,10 @@ def extract_line(raw: str) -> str:
     return lines[-1] if lines else ""
 
 
-def run_session(seed: dict, order: list[str], llm) -> tuple[list[dict], str]:
-    """order: speaker ids in turn order, e.g. [opener, originator, guest, originator]."""
+def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[dict], str]:
+    """order: speaker ids in turn order, e.g. [opener, originator, guest, originator].
+    on_line(entry) fires as each line is produced, so a live run posts
+    line by line instead of going silent until the cluster is done."""
     assert len(order) <= 5, "a cluster is at most 5 turns"
     packet = build_packet(seed)
     transcript: list[dict] = []
@@ -69,7 +71,10 @@ def run_session(seed: dict, order: list[str], llm) -> tuple[list[dict], str]:
         prompt = build_prompt(packet, transcript, speaker, repeat=pid in seen)
         seen.add(pid)
         text = extract_line(llm.generate(prompt, pid))
-        transcript.append({"member": pid, "name": speaker["name"], "text": text})
+        entry = {"member": pid, "name": speaker["name"], "text": text}
+        transcript.append(entry)
+        if on_line is not None:
+            on_line(entry)
     names = "→".join(dict.fromkeys(t["name"] for t in transcript))
     pool_line = f"{seed['topic']}の続き話をした ({names})"
     return transcript, pool_line

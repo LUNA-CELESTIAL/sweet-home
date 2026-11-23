@@ -63,9 +63,8 @@ class Day:
         if not self.seed:
             return
         transcript, pool_line = run_session(
-            self.seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm)
-        for t in transcript:
-            self.poster.post("living", t["name"], t["text"])
+            self.seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm,
+            on_line=lambda t: self.poster.post("living", t["name"], t["text"]))
         self.result["session"] = transcript
         self.result["pool_line"] = pool_line
 

@@ -78,6 +78,18 @@ def main():
     assert ran2 == ["living"], ran2
     assert done_reported == ["living 1"], done_reported
     assert any(e["action"] == "skipped (done)" for e in log2)
+
+    # Heavy cooldown: after a video job, 10 minutes pass before the
+    # next job starts, even when the next job is already due.
+    clock3 = FakeClock()
+    order3: list[tuple[str, float]] = []
+    jobs3 = [TimedJob(0, "morning duty", lambda: order3.append(("morning", clock3.minutes)),
+                      heavy=True, protected=True),
+             TimedJob(0, "living 1", lambda: order3.append(("living", clock3.minutes)))]
+    ex3 = Executor(clock3.now, clock3.sleep, temp_c=lambda: 50.0, temp_limit_c=85,
+                   heavy_cooldown_minutes=10)
+    ex3.run(jobs3)
+    assert order3 == [("morning", 0.0), ("living", 10.0)], order3
     print("ALL CHECKS PASSED")
 
 

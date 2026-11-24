@@ -145,8 +145,8 @@ def main():
 
         import json as _json
         import random as _random
-        gap_lo = float(cfg.get("CHAT_POST_INTERVAL_MIN_MINUTES", "5"))
-        gap_hi = float(cfg.get("CHAT_POST_INTERVAL_MAX_MINUTES", "10"))
+        gap_lo = float(cfg.get("CHAT_POST_INTERVAL_MIN_MINUTES", "3"))
+        gap_hi = float(cfg.get("CHAT_POST_INTERVAL_MAX_MINUTES", "3"))
 
         while True:
             today = datetime.datetime.now(TZ).date()
@@ -171,7 +171,9 @@ def main():
                       line_gap_minutes=lambda: _random.uniform(gap_lo, gap_hi),
                       sleeper=lambda m: time.sleep(m * 60))
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
-                                temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")))
+                                temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")),
+                                heavy_cooldown_minutes=float(
+                                    cfg.get("VIDEO_COOLDOWN_MINUTES", "10")))
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
                          skip=done, on_done=mark_done)
             print(f"day complete ({today})")

@@ -27,11 +27,18 @@ class TimedJob:
 
 class Executor:
     def __init__(self, now_minutes: Callable[[], float], sleep_minutes: Callable[[float], None],
-                 temp_c: Callable[[], float], temp_limit_c: float):
+                 temp_c: Callable[[], float], temp_limit_c: float,
+                 heavy_cooldown_minutes: float = 0):
         self.now = now_minutes
         self.sleep = sleep_minutes
         self.temp_c = temp_c
         self.temp_limit_c = temp_limit_c
+        # After a heavy job (video generation), let the machine and
+        # the models settle before the next job — especially before
+        # conversation generation, which reloads the LLM. Invisible
+        # on a normal day (jobs sit hours apart); it only bites when
+        # jobs would otherwise run back to back, e.g. after a restart.
+        self.heavy_cooldown_minutes = heavy_cooldown_minutes
         self.log: list[dict] = []
 
     def run(self, jobs: list[TimedJob], skip: set[str] | None = None,
@@ -56,6 +63,11 @@ class Executor:
             self.log.append({"name": job.name, "action": "run", "at": self.now()})
             if on_done is not None:
                 on_done(job.name)
+            if job.heavy and self.heavy_cooldown_minutes > 0:
+                self.sleep(self.heavy_cooldown_minutes)
+                self.log.append({"name": job.name, "action": "cooldown",
+                                 "minutes": self.heavy_cooldown_minutes,
+                                 "at": self.now()})
         return self.log
 
 

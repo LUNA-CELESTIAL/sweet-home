@@ -76,6 +76,24 @@ def main():
 
         body, ctype = build_multipart({"content": "こんばんは"}, out)
         assert b"payload_json" in body and b"ftypmp42" in body and "multipart" in ctype
+
+        # Speaking videos: the duty line is embedded in the prompt,
+        # and the situation follows the weather (morning) / night.
+        from video import build_video_prompt, situation_for
+        rainy = {"area": "東京地方", "raw": "雨", "rainy": True, "pop": "80"}
+        cloudy = {"area": "東京地方", "raw": "くもり", "rainy": False, "pop": "20"}
+        assert situation_for("morning", rainy) == "rainy"
+        assert situation_for("morning", cloudy) == "cloudy"
+        assert situation_for("morning", None) == "sunny"
+        assert situation_for("evening", rainy) == "night"
+        p = build_video_prompt(by_id("luna"), "morning", speech="おはよう。傘を持ってね。",
+                               weather=rainy)
+        assert 'speaking the phrase: "おはよう。傘を持ってね。"' in p, p
+        assert "lip sync" in p and "rain droplets" in p, p
+        out2 = client.generate(by_id("luna"), "morning", 7, Path(td) / "out2.mp4",
+                               speech="おはよう。傘を持ってね。", weather=rainy)
+        sent2 = SEEN["prompt"]["prompt"]["1"]["inputs"]
+        assert "傘を持ってね" in sent2["text"], sent2
     server.shutdown()
     print("ALL CHECKS PASSED")
 

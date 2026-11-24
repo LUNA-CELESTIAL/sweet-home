@@ -46,18 +46,26 @@ class Day:
 
     def _duty_with_media(self, member: dict, slot: str, text: str):
         voice_path = video_path = None
-        if self.voice is not None:
+        if self.video is not None:
+            # The video speaks the line itself (H3 native audio), so
+            # VOICEVOX is only the fallback for when there is no video.
+            try:
+                video_path = self.video.generate(
+                    member, slot,
+                    self.date.toordinal() + (0 if slot == "morning" else 1),
+                    self.out_dir / "video" / f"{self.date.isoformat()}-{slot}.mp4",
+                    speech=text, weather=self.weather if slot == "morning" else None)
+            except Exception as e:
+                print(f"video failed for {slot} duty, falling back to voice: {e}")
+                video_path = None
+            if video_path:
+                self.result.setdefault("video", {})[slot] = str(video_path)
+        if video_path is None and self.voice is not None:
             voice_path = self.voice.synthesize(
                 member["id"], text,
                 self.out_dir / "voice" / f"{self.date.isoformat()}-{slot}.wav")
             if voice_path:
                 self.result.setdefault("voice", {})[slot] = str(voice_path)
-        if self.video is not None:
-            video_path = self.video.generate(
-                member, slot, self.date.toordinal() + (0 if slot == "morning" else 1),
-                self.out_dir / "video" / f"{self.date.isoformat()}-{slot}.mp4")
-            if video_path:
-                self.result.setdefault("video", {})[slot] = str(video_path)
         self.poster.post("duty", member["name"], text, file_path=video_path or voice_path)
 
     def morning(self):

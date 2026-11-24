@@ -29,21 +29,72 @@ def fill_template(node, prompt: str, seed: int, image: str = ""):
     return node
 
 
-def build_video_prompt(member: dict, slot: str) -> str:
-    """Timed H3 prompt built from the member's actual look, so the
-    words never fight the first-frame image."""
+# Situation staging, in chibi_bot's shape: the duty line is spoken
+# to camera first, then a small closing gesture. The mood describes
+# the room and light only — never the character — so it cannot fight
+# the first-frame image (the lesson of the identity-drift accident).
+SITUATIONS = {
+    "sunny": (
+        "Looking straight at the camera with a cheerful expression",
+        "Smiling softly and waving one hand warmly",
+        "bright cozy room with warm sunbeams streaming through a window, cheerful morning atmosphere",
+    ),
+    "cloudy": (
+        "Looking at the viewer with a gentle expression",
+        "Blinking softly and offering a warm gentle wave",
+        "soft overcast daylight, gentle diffuse morning light, calm atmosphere",
+    ),
+    "rainy": (
+        "Near a window with rain droplets on the glass, turning to the camera",
+        "Smiling gently and gesturing softly",
+        "cozy room near a rainy window, soft warm indoor light, rainy day atmosphere outside",
+    ),
+    "night": (
+        "Sitting in a cozy dimly lit room, turning to the viewer",
+        "Smiling softly and giving a small peaceful night wave",
+        "cozy room at night, dim warm lamp light, starry night sky outside the window, relaxed peaceful atmosphere",
+    ),
+}
+
+
+def situation_for(slot: str, weather: dict | None) -> str:
+    if slot != "morning":
+        return "night"
+    if weather and weather.get("rainy"):
+        return "rainy"
+    if weather and any(kw in weather.get("raw", "") for kw in ("くもり", "曇")):
+        return "cloudy"
+    return "sunny"
+
+
+def build_video_prompt(member: dict, slot: str, speech: str | None = None,
+                       weather: dict | None = None) -> str:
+    """Timed H3 prompt. With a speech line, the video speaks it —
+    chibi_bot's way: the phrase is embedded in the action segment
+    and H3's native audio carries the voice with lip sync. The
+    member's actual look anchors identity, as before."""
     look = member.get("look", "chibi anime girl")
-    if slot == "morning":
-        action = "waves one hand cheerfully in a morning greeting and smiles at the viewer"
-        light = "soft morning light"
-    else:
-        action = "waves one hand gently in an evening greeting and smiles warmly at the viewer"
-        light = "warm evening light"
+    if not speech:
+        if slot == "morning":
+            action = "waves one hand cheerfully in a morning greeting and smiles at the viewer"
+            light = "soft morning light"
+        else:
+            action = "waves one hand gently in an evening greeting and smiles warmly at the viewer"
+            light = "warm evening light"
+        return (
+            f"Cinematic anime motion, starting from the image of {look}.\n\n"
+            f"00:00-00:02 (SHOT 1): The chibi girl steps forward toward the camera with a lively motion, "
+            f"her hair swaying naturally in {light}.\n\n"
+            f"00:02-00:05 (SHOT 2): She {action}. Creative anime transition, vivid colors, smooth motion."
+        )
+    pose, closing, mood = SITUATIONS[situation_for(slot, weather)]
     return (
-        f"Cinematic anime motion, starting from the image of {look}.\n\n"
-        f"00:00-00:02 (SHOT 1): The chibi girl steps forward toward the camera with a lively motion, "
-        f"her hair swaying naturally in {light}.\n\n"
-        f"00:02-00:05 (SHOT 2): She {action}. Creative anime transition, vivid colors, smooth motion."
+        f"Cinematic 2D anime motion starting from <Picture 1>. The character is {look}. "
+        f"Maintain exact character design, face, and clothing from <Picture 1>. "
+        f"Natural lip sync animation, speaking in Japanese. {mood}. "
+        f"Smooth animation, high quality, zero distortion.\n\n"
+        f"[0.00s-3.50s] {pose}, speaking the phrase: \"{speech}\".\n\n"
+        f"[3.50s-5.00s] {closing}."
     )
 
 
@@ -96,14 +147,16 @@ class ComfyUIClient:
                 waited += 5
 
     def generate(self, member: dict, slot: str, seed: int, out_path: Path,
-                 image: str | None = None) -> Path:
+                 image: str | None = None, speech: str | None = None,
+                 weather: dict | None = None) -> Path:
         if self.pace_seconds > 0 and self._last_gen_at is not None:
             remaining = self.pace_seconds - (self._clock() - self._last_gen_at)
             if remaining > 0:
                 self._sleep(remaining)
         self.wait_ready()
         image = image or f"deformer_{member['id']}.png"
-        workflow = fill_template(self.workflow, build_video_prompt(member, slot), seed, image)
+        workflow = fill_template(
+            self.workflow, build_video_prompt(member, slot, speech, weather), seed, image)
         queued = self._json("/prompt", {"prompt": workflow})
         prompt_id = queued["prompt_id"]
         waited = 0

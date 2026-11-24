@@ -27,6 +27,7 @@ from llm import OllamaClient  # noqa: E402
 from poster import ConsolePoster, DiscordPoster  # noqa: E402
 from video import ComfyUIClient  # noqa: E402
 from voice import VoicevoxClient, speaker_ids_from_config  # noqa: E402
+from weather import fetch_today  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -110,7 +111,9 @@ def main():
           f"video={'on' if video else 'off'})")
 
     if args.once:
-        run_day(llm, poster, datetime.date.today(), "晴れ", DEMO_SEED, DEMO_EVENTS,
+        run_day(llm, poster, datetime.date.today(),
+                fetch_today(cfg.get("WEATHER_AREA_CODE", "130000")),
+                DEMO_SEED, DEMO_EVENTS,
                 ROOT / "out", site_export_path=ROOT / "export" / "diary.json",
                 voice=voice, video=video)
         print("day complete")
@@ -142,7 +145,9 @@ def main():
 
         while True:
             today = datetime.datetime.now(TZ).date()
-            day = Day(llm, poster, today, "晴れ", DEMO_SEED, DEMO_EVENTS,
+            day = Day(llm, poster, today,
+                      fetch_today(cfg.get("WEATHER_AREA_CODE", "130000")),
+                      DEMO_SEED, DEMO_EVENTS,
                       ROOT / "out", voice=voice, video=video)
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")))

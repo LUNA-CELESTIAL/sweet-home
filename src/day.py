@@ -22,7 +22,7 @@ DEFAULT_CLUSTER_ORDER = ["luna", "stella", "spica", "stella"]
 
 
 class Day:
-    def __init__(self, llm, poster, date: datetime.date, weather: str,
+    def __init__(self, llm, poster, date: datetime.date, weather: dict | None,
                  yesterday_seed: dict | None, events: list[dict],
                  out_dir: Path, voice=None, video=None):
         self.llm = llm
@@ -62,6 +62,11 @@ class Day:
     def living(self, cluster_order: list[str] | None = None):
         if not self.seed:
             return
+        # A one-line signpost first: the conversation runs in the
+        # present progressive, so a glance should still be able to
+        # tell what is being talked about.
+        self.poster.post("living", "リビング",
+                         f"―― {self.seed['sourceMember']}の「{self.seed['topic']}」の話 ――")
         transcript, pool_line = run_session(
             self.seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm,
             on_line=lambda t: self.poster.post("living", t["name"], t["text"]))
@@ -70,15 +75,22 @@ class Day:
 
     def evening(self):
         member = duty_member(self.date, "evening")
-        text = duty_text(self.llm, member, "evening", "", None)
+        text = duty_text(self.llm, member, "evening", None, None)
         self._duty_with_media(member, "evening", text)
         self.result["evening"] = text
 
     def diary(self, site_export_path: Path | None = None):
         writer = writer_for(self.date)
         structure, _ = build_diary(self.date, self.events)
-        meta, md = diary_prose(self.llm, writer, self.date, self.events, structure)
-        self.poster.post("diary", writer["name"], f"{meta['title']}\n{meta['siteExcerpt']}")
+        meta, md = diary_prose(self.llm, writer, self.date, self.events, structure,
+                               yesterday_seed=self.seed)
+        thread = meta.get("thread") or {}
+        diary_post = f"{meta['title']}\n{meta['siteExcerpt']}"
+        if thread:
+            diary_post += (f"\n\n―― いまの話 ――\n前提: {thread['premise']}"
+                           f"\n今日の進み: {thread['progress']}"
+                           f"\n残っている問い: {thread['question']}")
+        self.poster.post("diary", writer["name"], diary_post)
         self.result["diary"] = meta
         (self.out_dir / f"diary-{self.date.isoformat()}.md").write_text(md, encoding="utf-8")
         (self.out_dir / f"diary-{self.date.isoformat()}.json").write_text(
@@ -92,7 +104,7 @@ class Day:
         self.result["seed"] = meta["seed"]
 
 
-def run_day(llm, poster, date: datetime.date, weather: str,
+def run_day(llm, poster, date: datetime.date, weather: dict | None,
             yesterday_seed: dict | None, events: list[dict],
             out_dir: Path, cluster_order: list[str] | None = None,
             site_export_path: Path | None = None, voice=None, video=None) -> dict:

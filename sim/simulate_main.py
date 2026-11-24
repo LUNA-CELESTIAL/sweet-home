@@ -26,7 +26,10 @@ def main():
         "spica": ["「パケットを放って測ってみようかな。」"],
         "sirius": ["朝は当番の声から始まった。", "午後、会話が行き来した。",
                    "言葉が次の言葉を呼ぶ日だった。",
-                   "TITLE: 続きが届いた日\nEXCERPT: 昨日の続きが今日の会話になりました。"],
+                   "TITLE: 続きが届いた日\nEXCERPT: 昨日の続きが今日の会話になりました。",
+                   "PREMISE: ステラのPingツールの話が続いている。\n"
+                   "PROGRESS: 今日は測ってみる一言まで進んだ。\n"
+                   "QUESTION: 測ることと、測らないでおく余白の境目。"],
     }
     poster = ConsolePoster()
 
@@ -44,10 +47,14 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
         result = run_day(FakeLLM(script), poster, datetime.date(2026, 11, 23),
-                         "晴れ", DEMO_SEED, DEMO_EVENTS, out,
+                         {"area": "東京地方", "raw": "晴れ", "rainy": False, "pop": "10"},
+                         DEMO_SEED, DEMO_EVENTS, out,
                          site_export_path=ROOT / "export" / "diary.json", voice=voice)
         channels = [p["channel"] for p in poster.posts]
-        assert channels == ["duty", "living", "living", "living", "living", "duty", "diary"], channels
+        assert channels == ["duty", "living", "living", "living", "living", "living",
+                            "duty", "diary"], channels
+        diary_post = poster.posts[-1]["text"]
+        assert "いまの話" in diary_post and "前提:" in diary_post, diary_post
         assert (out / "diary-2026-11-23.md").exists() and (out / "diary-site.json").exists()
         assert result["seed"]["topic"] == "Pingツールの続き"
         assert voice.calls == [("kohaku", "2026-11-23-morning.wav"),

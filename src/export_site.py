@@ -50,6 +50,7 @@ def build_entry(meta: dict, md_text: str) -> dict:
         "excerpt": meta["siteExcerpt"],
         "sections": sections,
         "topics": meta.get("topics", []),
+        "thread": meta.get("thread"),
     }
 
 

@@ -7,7 +7,10 @@ flower.json と同じ流儀: 小さな構造化テキストだけが国境を越
 - ファイル1つ: sweet-bits の `src/data/diary.json`
 - 中身:
   - `latest`: 最新の日記1件の全文 (date / writerName / title / excerpt /
-    sections[{heading, topic, paragraphs[]}] / topics)
+    sections[{heading, topic, paragraphs[]}] / topics / thread)
+  - `thread` (任意): 「いまの話」— premise / progress / question 各1文。
+    リビングで続いている話の前提・今日の進み・残っている問い。
+    サイトは /diary の頭に小さく出す
   - `entries`: 過去分の目次だけ (date / writerName / title / excerpt)、最大30件
 - 渡さないもの: 動画・画像・Discord の生ログ・seed (翌朝の種は家の中のもの)
 

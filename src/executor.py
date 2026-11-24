@@ -46,14 +46,6 @@ class Executor:
             paused: Callable[[], bool] | None = None) -> list[dict]:
         skip = skip or set()
         for job in sorted(jobs, key=lambda j: j.at):
-            if paused is not None and paused():
-                # Experiment mode: the machine belongs to Ruru's own
-                # work. The job is let go (and marked done, so lifting
-                # the pause does not fire a catch-up burst later).
-                self.log.append({"name": job.name, "action": "paused", "at": self.now()})
-                if on_done is not None:
-                    on_done(job.name)
-                continue
             if job.name in skip:
                 # Already completed before a restart: a lived day is
                 # not re-lived. (The video seed is per-date, so a
@@ -64,6 +56,15 @@ class Executor:
             wait = job.at - self.now()
             if wait > 0:
                 self.sleep(wait)
+            if paused is not None and paused():
+                # Experiment mode, checked at the job's own moment:
+                # the machine belongs to Ruru's own work right now.
+                # The job is let go (and marked done, so lifting the
+                # pause does not fire a catch-up burst later).
+                self.log.append({"name": job.name, "action": "paused", "at": self.now()})
+                if on_done is not None:
+                    on_done(job.name)
+                continue
             if job.heavy and not job.protected and self.temp_c() >= self.temp_limit_c:
                 self.log.append({"name": job.name, "action": "dropped",
                                  "note": "thermal guard", "at": self.now()})

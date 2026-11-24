@@ -99,6 +99,22 @@ def main():
                    on_done=done4.append, paused=lambda: True)
     assert ran4 == [] and done4 == ["morning duty"], (ran4, done4)
     assert log4[0]["action"] == "paused"
+
+    # The pause is judged at the job's own moment: a flag raised
+    # while the executor sleeps toward the job still lets it go,
+    # and a flag lifted before the moment lets the job run.
+    clock5 = FakeClock()
+    ran5: list[str] = []
+    ex5 = Executor(clock5.now, clock5.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    ex5.run([TimedJob(60, "living 1", lambda: ran5.append("living"))],
+            paused=lambda: clock5.minutes >= 30)
+    assert ran5 == [], ran5
+    clock6 = FakeClock()
+    ran6: list[str] = []
+    ex6 = Executor(clock6.now, clock6.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    ex6.run([TimedJob(60, "living 1", lambda: ran6.append("living"))],
+            paused=lambda: clock6.minutes < 30)
+    assert ran6 == ["living"], ran6
     print("ALL CHECKS PASSED")
 
 

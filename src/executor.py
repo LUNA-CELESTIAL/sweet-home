@@ -42,9 +42,18 @@ class Executor:
         self.log: list[dict] = []
 
     def run(self, jobs: list[TimedJob], skip: set[str] | None = None,
-            on_done: Callable[[str], None] | None = None) -> list[dict]:
+            on_done: Callable[[str], None] | None = None,
+            paused: Callable[[], bool] | None = None) -> list[dict]:
         skip = skip or set()
         for job in sorted(jobs, key=lambda j: j.at):
+            if paused is not None and paused():
+                # Experiment mode: the machine belongs to Ruru's own
+                # work. The job is let go (and marked done, so lifting
+                # the pause does not fire a catch-up burst later).
+                self.log.append({"name": job.name, "action": "paused", "at": self.now()})
+                if on_done is not None:
+                    on_done(job.name)
+                continue
             if job.name in skip:
                 # Already completed before a restart: a lived day is
                 # not re-lived. (The video seed is per-date, so a

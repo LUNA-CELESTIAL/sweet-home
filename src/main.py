@@ -169,13 +169,15 @@ def main():
                       DEMO_SEED, DEMO_EVENTS,
                       ROOT / "out", voice=voice, video=video,
                       line_gap_minutes=lambda: _random.uniform(gap_lo, gap_hi),
-                      sleeper=lambda m: time.sleep(m * 60))
+                      sleeper=lambda m: time.sleep(m * 60),
+                      llm_release=getattr(llm, "release", None))
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")),
                                 heavy_cooldown_minutes=float(
                                     cfg.get("VIDEO_COOLDOWN_MINUTES", "10")))
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
-                         skip=done, on_done=mark_done)
+                         skip=done, on_done=mark_done,
+                         paused=lambda: (ROOT / "out" / "PAUSE").exists())
             print(f"day complete ({today})")
             # sleep to just past midnight, then build the next day
             now = datetime.datetime.now(TZ)

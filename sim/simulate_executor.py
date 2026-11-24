@@ -90,6 +90,15 @@ def main():
                    heavy_cooldown_minutes=10)
     ex3.run(jobs3)
     assert order3 == [("morning", 0.0), ("living", 10.0)], order3
+
+    # Pause flag: every job is let go and reported done, nothing runs.
+    ran4: list[str] = []
+    done4: list[str] = []
+    ex4 = Executor(FakeClock().now, FakeClock().sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    log4 = ex4.run([TimedJob(0, "morning duty", lambda: ran4.append("m"))],
+                   on_done=done4.append, paused=lambda: True)
+    assert ran4 == [] and done4 == ["morning duty"], (ran4, done4)
+    assert log4[0]["action"] == "paused"
     print("ALL CHECKS PASSED")
 
 

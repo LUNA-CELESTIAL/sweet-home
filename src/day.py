@@ -25,7 +25,7 @@ class Day:
     def __init__(self, llm, poster, date: datetime.date, weather: dict | None,
                  yesterday_seed: dict | None, events: list[dict],
                  out_dir: Path, voice=None, video=None,
-                 line_gap_minutes=None, sleeper=None):
+                 line_gap_minutes=None, sleeper=None, llm_release=None):
         self.llm = llm
         self.poster = poster
         self.date = date
@@ -41,6 +41,9 @@ class Day:
         # runs pass nothing and stay fast.
         self.line_gap_minutes = line_gap_minutes
         self.sleeper = sleeper
+        # Called when a part's generation is done, to hand the GPU
+        # back (live Ollama unloads its model). Offline: None.
+        self.llm_release = llm_release
         self.result: dict = {}
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -69,9 +72,14 @@ class Day:
                 self.result.setdefault("voice", {})[slot] = str(voice_path)
         self.poster.post("duty", member["name"], text, file_path=video_path or voice_path)
 
+    def _release(self):
+        if self.llm_release is not None:
+            self.llm_release()
+
     def morning(self):
         member = duty_member(self.date, "morning")
         text = duty_text(self.llm, member, "morning", self.weather, self.seed)
+        self._release()  # hand VRAM to the video render that follows
         self._duty_with_media(member, "morning", text)
         self.result["morning"] = text
 
@@ -96,10 +104,12 @@ class Day:
             on_line=on_line)
         self.result["session"] = transcript
         self.result["pool_line"] = pool_line
+        self._release()
 
     def evening(self):
         member = duty_member(self.date, "evening")
         text = duty_text(self.llm, member, "evening", None, None)
+        self._release()  # hand VRAM to the video render that follows
         self._duty_with_media(member, "evening", text)
         self.result["evening"] = text
 
@@ -108,6 +118,7 @@ class Day:
         structure, _ = build_diary(self.date, self.events)
         meta, md = diary_prose(self.llm, writer, self.date, self.events, structure,
                                yesterday_seed=self.seed)
+        self._release()
         thread = meta.get("thread") or {}
         diary_post = f"{meta['title']}\n{meta['siteExcerpt']}"
         if thread:

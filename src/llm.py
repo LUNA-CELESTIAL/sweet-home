@@ -39,3 +39,19 @@ class OllamaClient:
         )
         with urllib.request.urlopen(req, timeout=300) as res:
             return json.loads(res.read())["response"].strip()
+
+    def release(self) -> None:
+        """Unload the model from VRAM (keep_alive: 0), the way
+        luna-tech-web did: the house does not squat GPU memory
+        between its short bursts of work, so Ruru's own experiments
+        find the machine as they left it. Never raises."""
+        try:
+            body = json.dumps({"model": self.model, "keep_alive": 0}).encode()
+            req = urllib.request.Request(
+                f"{self.base_url}/api/generate", data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as res:
+                res.read()
+        except Exception:
+            pass

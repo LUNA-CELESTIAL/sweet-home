@@ -96,6 +96,23 @@ def main():
         assert "傘を持ってね" in sent2["text"], sent2
         assert sent2["duration"] == 10, sent2
         assert "[0.00s-7.00s]" in sent2["text"] and "[7.00s-10.00s]" in sent2["text"], sent2["text"]
+        # Queue courtesy: while someone else's job occupies ComfyUI,
+        # the house waits; a broken queue check never blocks.
+        import video as video_mod
+        seq = [{"queue_running": [[1, "x"]], "queue_pending": []},
+               {"queue_running": [], "queue_pending": [[2, "y"]]},
+               {"queue_running": [], "queue_pending": []}]
+        client._json = lambda path, payload=None: seq.pop(0)
+        slept_q: list[float] = []
+        orig_sleep = video_mod.time.sleep
+        video_mod.time.sleep = slept_q.append
+        try:
+            client._wait_queue_clear()
+        finally:
+            video_mod.time.sleep = orig_sleep
+        assert slept_q == [15, 15], slept_q
+        client._json = lambda path, payload=None: 1 / 0
+        client._wait_queue_clear()  # must simply return
     server.shutdown()
     print("ALL CHECKS PASSED")
 

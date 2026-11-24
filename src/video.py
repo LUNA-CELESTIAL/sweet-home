@@ -149,6 +149,24 @@ class ComfyUIClient:
                 time.sleep(5)
                 waited += 5
 
+    def _wait_queue_clear(self) -> None:
+        """The house is a guest on this GPU. If someone else's job is
+        running or queued in ComfyUI (an experiment, a hand-run
+        render), wait until the queue is empty — a duty video can
+        afford to be late; an experiment should not be collided with.
+        A broken queue check never blocks the house."""
+        waited = 0
+        while waited < self.timeout_seconds:
+            try:
+                q = self._json("/queue")
+                busy = (q.get("queue_running") or []) + (q.get("queue_pending") or [])
+            except Exception:
+                return
+            if not busy:
+                return
+            time.sleep(15)
+            waited += 15
+
     def generate(self, member: dict, slot: str, seed: int, out_path: Path,
                  image: str | None = None, speech: str | None = None,
                  weather: dict | None = None, duration: float = 5) -> Path:
@@ -157,6 +175,7 @@ class ComfyUIClient:
             if remaining > 0:
                 self._sleep(remaining)
         self.wait_ready()
+        self._wait_queue_clear()
         image = image or f"deformer_{member['id']}.png"
         workflow = fill_template(
             self.workflow, build_video_prompt(member, slot, speech, weather, duration),

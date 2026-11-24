@@ -54,7 +54,8 @@ class Day:
                     member, slot,
                     self.date.toordinal() + (0 if slot == "morning" else 1),
                     self.out_dir / "video" / f"{self.date.isoformat()}-{slot}.mp4",
-                    speech=text, weather=self.weather if slot == "morning" else None)
+                    speech=text, weather=self.weather if slot == "morning" else None,
+                    duration=10)
             except Exception as e:
                 print(f"video failed for {slot} duty, falling back to voice: {e}")
                 video_path = None

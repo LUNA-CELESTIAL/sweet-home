@@ -16,14 +16,16 @@ import urllib.request
 from pathlib import Path
 
 
-def fill_template(node, prompt: str, seed: int, image: str = ""):
+def fill_template(node, prompt: str, seed: int, image: str = "", duration: float = 5):
     if isinstance(node, dict):
-        return {k: fill_template(v, prompt, seed, image) for k, v in node.items()}
+        return {k: fill_template(v, prompt, seed, image, duration) for k, v in node.items()}
     if isinstance(node, list):
-        return [fill_template(v, prompt, seed, image) for v in node]
+        return [fill_template(v, prompt, seed, image, duration) for v in node]
     if isinstance(node, str):
         if node == "{seed}":
             return seed
+        if node == "{duration}":
+            return duration
         return (node.replace("{prompt}", prompt).replace("{seed}", str(seed))
                 .replace("{image}", image))
     return node
@@ -68,7 +70,7 @@ def situation_for(slot: str, weather: dict | None) -> str:
 
 
 def build_video_prompt(member: dict, slot: str, speech: str | None = None,
-                       weather: dict | None = None) -> str:
+                       weather: dict | None = None, duration: float = 5) -> str:
     """Timed H3 prompt. With a speech line, the video speaks it —
     chibi_bot's way: the phrase is embedded in the action segment
     and H3's native audio carries the voice with lip sync. The
@@ -88,13 +90,14 @@ def build_video_prompt(member: dict, slot: str, speech: str | None = None,
             f"00:02-00:05 (SHOT 2): She {action}. Creative anime transition, vivid colors, smooth motion."
         )
     pose, closing, mood = SITUATIONS[situation_for(slot, weather)]
+    speak_end = duration * 0.7
     return (
         f"Cinematic 2D anime motion starting from <Picture 1>. The character is {look}. "
         f"Maintain exact character design, face, and clothing from <Picture 1>. "
         f"Natural lip sync animation, speaking in Japanese. {mood}. "
         f"Smooth animation, high quality, zero distortion.\n\n"
-        f"[0.00s-3.50s] {pose}, speaking the phrase: \"{speech}\".\n\n"
-        f"[3.50s-5.00s] {closing}."
+        f"[0.00s-{speak_end:.2f}s] {pose}, speaking the phrase: \"{speech}\".\n\n"
+        f"[{speak_end:.2f}s-{duration:.2f}s] {closing}."
     )
 
 
@@ -148,7 +151,7 @@ class ComfyUIClient:
 
     def generate(self, member: dict, slot: str, seed: int, out_path: Path,
                  image: str | None = None, speech: str | None = None,
-                 weather: dict | None = None) -> Path:
+                 weather: dict | None = None, duration: float = 5) -> Path:
         if self.pace_seconds > 0 and self._last_gen_at is not None:
             remaining = self.pace_seconds - (self._clock() - self._last_gen_at)
             if remaining > 0:
@@ -156,7 +159,8 @@ class ComfyUIClient:
         self.wait_ready()
         image = image or f"deformer_{member['id']}.png"
         workflow = fill_template(
-            self.workflow, build_video_prompt(member, slot, speech, weather), seed, image)
+            self.workflow, build_video_prompt(member, slot, speech, weather, duration),
+            seed, image, duration)
         queued = self._json("/prompt", {"prompt": workflow})
         prompt_id = queued["prompt_id"]
         waited = 0

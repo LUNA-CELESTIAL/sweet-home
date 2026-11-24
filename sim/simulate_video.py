@@ -64,7 +64,7 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         wf = Path(td) / "workflow.json"
         wf.write_text(json.dumps({"1": {"inputs": {"text": "{prompt}", "seed": "{seed}",
-                                                   "image": "{image}"}}}),
+                                                   "image": "{image}", "duration": "{duration}"}}}),
                       encoding="utf-8")
         client = ComfyUIClient(base, str(wf), poll_seconds=0)
         from personas import by_id
@@ -91,9 +91,11 @@ def main():
         assert 'speaking the phrase: "おはよう。傘を持ってね。"' in p, p
         assert "lip sync" in p and "rain droplets" in p, p
         out2 = client.generate(by_id("luna"), "morning", 7, Path(td) / "out2.mp4",
-                               speech="おはよう。傘を持ってね。", weather=rainy)
+                               speech="おはよう。傘を持ってね。", weather=rainy, duration=10)
         sent2 = SEEN["prompt"]["prompt"]["1"]["inputs"]
         assert "傘を持ってね" in sent2["text"], sent2
+        assert sent2["duration"] == 10, sent2
+        assert "[0.00s-7.00s]" in sent2["text"] and "[7.00s-10.00s]" in sent2["text"], sent2["text"]
     server.shutdown()
     print("ALL CHECKS PASSED")
 

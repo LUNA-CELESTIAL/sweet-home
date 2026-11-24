@@ -31,7 +31,7 @@ def duty_text(llm, member: dict, slot: str, weather: dict | None, seed: dict | N
             wline += f"降水確率は最大{w['pop']}パーセント。"
         ask = (f"朝の当番の挨拶を、台詞ひとつ分、「」で囲んで書いてください。{wline}"
                f"「おはよう、{member['name']}です」のように、自分の名前で名乗ってください。"
-               "今日への一言も入れてください。")
+               "今日への一言も入れてください。台詞は70文字以内を目安に、短めにしてください。")
         if w.get("rainy"):
             ask += ("雨の予報なので、出かける人へ傘を忘れずに、という一言も"
                     "自分の言葉で添えてください。")
@@ -42,6 +42,7 @@ def duty_text(llm, member: dict, slot: str, weather: dict | None, seed: dict | N
         ask = ("夜の当番の挨拶を、台詞ひとつ分、「」で囲んで書いてください。"
                f"「こんばんは、{member['name']}です」のように、自分の名前で名乗ってください。"
                "一日へのねぎらいと、明日の朝への一言を入れてください。"
+               "台詞は70文字以内を目安に、短めにしてください。"
                "自分に話しかける形にはしないでください。")
     prompt = _persona_block(member) + "\n\n" + ask + "\n説明や例示は書かないでください。出すのは台詞だけです。"
     return extract_line(llm.generate(prompt, member["id"]))

@@ -30,6 +30,20 @@ from voice import VoicevoxClient, speaker_ids_from_config  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
+
+def house_tz(cfg: dict):
+    """The house lives in one timezone. Containers default to UTC, so
+    never trust naive local time: resolve TZ_NAME (default Asia/Tokyo)
+    explicitly, with a fixed-offset fallback if tzdata is missing."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    name = cfg.get("TZ_NAME", "Asia/Tokyo")
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        if name == "Asia/Tokyo":
+            return datetime.timezone(datetime.timedelta(hours=9), name)
+        raise
+
 DEMO_SEED = {
     "topic": "Pingツール", "sourceMember": "ステラ",
     "quote": "機能の数だけ手を出すのではなく、静かな回線の中で本当に必要なものを選ぶ目配り",
@@ -103,6 +117,7 @@ def main():
         return
 
     if args.serve:
+        TZ = house_tz(cfg)
         # Plan-driven: each part of the day runs at its planned time,
         # heavy jobs keep their interval (enforced again inside the
         # video client), and the thermal guard can drop skippable
@@ -113,7 +128,7 @@ def main():
             video.pace_seconds = pace
 
         def now_minutes() -> float:
-            n = datetime.datetime.now()
+            n = datetime.datetime.now(TZ)
             return n.hour * 60 + n.minute + n.second / 60
 
         def temp_c() -> float:
@@ -126,7 +141,7 @@ def main():
             return max(temps) if temps else 40.0
 
         while True:
-            today = datetime.date.today()
+            today = datetime.datetime.now(TZ).date()
             day = Day(llm, poster, today, "晴れ", DEMO_SEED, DEMO_EVENTS,
                       ROOT / "out", voice=voice, video=video)
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
@@ -134,7 +149,7 @@ def main():
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"))
             print(f"day complete ({today})")
             # sleep to just past midnight, then build the next day
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(TZ)
             nxt = (now + datetime.timedelta(days=1)).replace(hour=0, minute=5,
                                                              second=0, microsecond=0)
             time.sleep(max(60.0, (nxt - now).total_seconds()))

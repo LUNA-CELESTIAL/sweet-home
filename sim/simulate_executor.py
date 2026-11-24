@@ -65,6 +65,19 @@ def main():
         except Exception:
             pass  # the stub server is not there; only the pacing sleep matters
         assert t["slept"] and abs(t["slept"][0] - 1700) < 1, t["slept"]
+    # Restart: jobs already done are skipped, completions are reported.
+    clock2 = FakeClock()
+    clock2.minutes = 6 * 60
+    ran2: list[str] = []
+    jobs2 = [TimedJob(7 * 60, "morning duty", lambda: ran2.append("morning"),
+                      heavy=True, protected=True),
+             TimedJob(10 * 60, "living 1", lambda: ran2.append("living"))]
+    done_reported: list[str] = []
+    ex2 = Executor(clock2.now, clock2.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    log2 = ex2.run(jobs2, skip={"morning duty"}, on_done=done_reported.append)
+    assert ran2 == ["living"], ran2
+    assert done_reported == ["living 1"], done_reported
+    assert any(e["action"] == "skipped (done)" for e in log2)
     print("ALL CHECKS PASSED")
 
 

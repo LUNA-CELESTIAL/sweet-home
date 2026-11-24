@@ -143,15 +143,37 @@ def main():
                     pass
             return max(temps) if temps else 40.0
 
+        import json as _json
+        import random as _random
+        gap_lo = float(cfg.get("CHAT_POST_INTERVAL_MIN_MINUTES", "5"))
+        gap_hi = float(cfg.get("CHAT_POST_INTERVAL_MAX_MINUTES", "10"))
+
         while True:
             today = datetime.datetime.now(TZ).date()
+            state_path = ROOT / "out" / f"state-{today.isoformat()}.json"
+            done: set[str] = set()
+            if state_path.exists():
+                try:
+                    done = set(_json.loads(state_path.read_text(encoding="utf-8"))["done"])
+                except Exception:
+                    done = set()
+
+            def mark_done(name: str, _done=done, _path=state_path):
+                _done.add(name)
+                _path.parent.mkdir(parents=True, exist_ok=True)
+                _path.write_text(_json.dumps({"done": sorted(_done)},
+                                             ensure_ascii=False), encoding="utf-8")
+
             day = Day(llm, poster, today,
                       fetch_today(cfg.get("WEATHER_AREA_CODE", "130000")),
                       DEMO_SEED, DEMO_EVENTS,
-                      ROOT / "out", voice=voice, video=video)
+                      ROOT / "out", voice=voice, video=video,
+                      line_gap_minutes=lambda: _random.uniform(gap_lo, gap_hi),
+                      sleeper=lambda m: time.sleep(m * 60))
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")))
-            executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"))
+            executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
+                         skip=done, on_done=mark_done)
             print(f"day complete ({today})")
             # sleep to just past midnight, then build the next day
             now = datetime.datetime.now(TZ)

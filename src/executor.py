@@ -34,8 +34,17 @@ class Executor:
         self.temp_limit_c = temp_limit_c
         self.log: list[dict] = []
 
-    def run(self, jobs: list[TimedJob]) -> list[dict]:
+    def run(self, jobs: list[TimedJob], skip: set[str] | None = None,
+            on_done: Callable[[str], None] | None = None) -> list[dict]:
+        skip = skip or set()
         for job in sorted(jobs, key=lambda j: j.at):
+            if job.name in skip:
+                # Already completed before a restart: a lived day is
+                # not re-lived. (The video seed is per-date, so a
+                # re-run would even produce the identical video.)
+                self.log.append({"name": job.name, "action": "skipped (done)",
+                                 "at": self.now()})
+                continue
             wait = job.at - self.now()
             if wait > 0:
                 self.sleep(wait)
@@ -45,6 +54,8 @@ class Executor:
                 continue
             job.fn()
             self.log.append({"name": job.name, "action": "run", "at": self.now()})
+            if on_done is not None:
+                on_done(job.name)
         return self.log
 
 

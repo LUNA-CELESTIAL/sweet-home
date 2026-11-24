@@ -24,7 +24,8 @@ DEFAULT_CLUSTER_ORDER = ["luna", "stella", "spica", "stella"]
 class Day:
     def __init__(self, llm, poster, date: datetime.date, weather: dict | None,
                  yesterday_seed: dict | None, events: list[dict],
-                 out_dir: Path, voice=None, video=None):
+                 out_dir: Path, voice=None, video=None,
+                 line_gap_minutes=None, sleeper=None):
         self.llm = llm
         self.poster = poster
         self.date = date
@@ -34,6 +35,12 @@ class Day:
         self.out_dir = out_dir
         self.voice = voice
         self.video = video
+        # Living lines breathe: in live operation a gap (minutes, from
+        # line_gap_minutes()) passes between lines of a cluster, so the
+        # room feels visited over time rather than bursting. Offline
+        # runs pass nothing and stay fast.
+        self.line_gap_minutes = line_gap_minutes
+        self.sleeper = sleeper
         self.result: dict = {}
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -67,9 +74,17 @@ class Day:
         # tell what is being talked about.
         self.poster.post("living", "リビング",
                          f"―― {self.seed['sourceMember']}の「{self.seed['topic']}」の話 ――")
+        posted = {"n": 0}
+
+        def on_line(t):
+            if posted["n"] > 0 and self.line_gap_minutes and self.sleeper:
+                self.sleeper(self.line_gap_minutes())
+            posted["n"] += 1
+            self.poster.post("living", t["name"], t["text"])
+
         transcript, pool_line = run_session(
             self.seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm,
-            on_line=lambda t: self.poster.post("living", t["name"], t["text"]))
+            on_line=on_line)
         self.result["session"] = transcript
         self.result["pool_line"] = pool_line
 

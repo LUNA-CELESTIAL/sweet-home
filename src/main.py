@@ -2,8 +2,8 @@
 
 Modes:
   --once   run today's full day once, back to back (verification)
-  --serve  plan-driven operation: morning duty 07:00, living clusters
-           10:30 / 14:30 / 17:30, evening duty 21:00, diary 21:30,
+  --serve  plan-driven operation: morning duty 09:30, living clusters
+           10:30 / 14:30 / 17:30, evening duty 20:00, diary 21:30,
            with video pacing and the thermal guard active
 
 Safety: live posting requires RUN_MODE=live AND no placeholder
@@ -148,6 +148,14 @@ def main():
                     {str(guild["owner_id"]), str(me["id"])})
                 threading.Thread(target=control.run_forever, daemon=True).start()
                 print("discord control: listening in the work channel")
+                from shares import SharesWatcher
+                watcher = SharesWatcher(
+                    cfg["DISCORD_BOT_TOKEN"],
+                    [cfg["DISCORD_CHANNEL_LIVING_ID"], cfg["DISCORD_CHANNEL_VLOG_ID"]],
+                    str(guild["owner_id"]), ROOT / "out",
+                    ROOT / "out" / "shares-state.json", TZ)
+                threading.Thread(target=watcher.run_forever, daemon=True).start()
+                print("shares watcher: listening in living/vlog")
             except Exception as e:
                 print(f"discord control unavailable (house continues): {e}")
         # Plan-driven: each part of the day runs at its planned time,
@@ -193,13 +201,28 @@ def main():
                 _path.write_text(_json.dumps({"done": sorted(_done)},
                                              ensure_ascii=False), encoding="utf-8")
 
+            import cycle as _cycle
+            seed = _cycle.load_seed(ROOT / "out") or DEMO_SEED
+            archive = _cycle.load_archive(ROOT / "out")
+            yesterday = (today - datetime.timedelta(days=1)).isoformat()
+            related = _cycle.related_past_seed(
+                archive, seed["topic"], {yesterday, today.isoformat()})
+
+            def share_seed_loader(_today=today):
+                shares = [s for s in _cycle.load_shares(
+                    ROOT / "out", _today.isoformat())
+                    if s.get("minutes", 0) > 9 * 60 + 30]
+                return _cycle.share_to_seed(shares[-1]) if shares else None
+
             day = Day(llm, poster, today,
                       fetch_today(cfg.get("WEATHER_AREA_CODE", "130000")),
-                      DEMO_SEED, DEMO_EVENTS,
+                      seed, [],
                       ROOT / "out", voice=voice, video=video,
                       line_gap_minutes=lambda: _random.uniform(gap_lo, gap_hi),
                       sleeper=lambda m: time.sleep(m * 60),
-                      llm_release=getattr(llm, "release", None))
+                      llm_release=getattr(llm, "release", None),
+                      share_seed_loader=share_seed_loader,
+                      related_seed=related)
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")),
                                 heavy_cooldown_minutes=float(

@@ -12,6 +12,7 @@ import datetime
 import json
 from pathlib import Path
 
+import cycle
 from diary import build_diary, writer_for
 from duty import duty_member
 from export_site import build_entry, merge
@@ -19,20 +20,37 @@ from generate import diary_prose, duty_text
 from session import run_session
 
 DEFAULT_CLUSTER_ORDER = ["luna", "stella", "spica", "stella"]
+LIVING_TIMES = [10 * 60 + 30, 14 * 60 + 30, 17 * 60 + 30]
+MORNING_MINUTES = 9 * 60 + 30
+EVENING_MINUTES = 20 * 60
 
 
 class Day:
     def __init__(self, llm, poster, date: datetime.date, weather: dict | None,
-                 yesterday_seed: dict | None, events: list[dict],
-                 out_dir: Path, voice=None, video=None,
-                 line_gap_minutes=None, sleeper=None, llm_release=None):
+                 yesterday_seed: dict | None, events: list[dict] | None = None,
+                 out_dir: Path = Path("out"), voice=None, video=None,
+                 line_gap_minutes=None, sleeper=None, llm_release=None,
+                 share_seed_loader=None, related_seed: dict | None = None):
         self.llm = llm
         self.poster = poster
         self.date = date
         self.weather = weather
         self.seed = yesterday_seed
-        self.events = events
+        # The day's own event pool: starts from whatever the house
+        # already knows (site updates, outside events) and grows with
+        # what actually happens today — duty, shares, the living
+        # room. The diary is written from this, and only this.
+        self.events = list(events) if events else []
         self.out_dir = out_dir
+        # A fresh share from this morning (a video, a link) can take
+        # over the living room's topic; loaded lazily at the first
+        # cluster, because shares arrive after the morning duty.
+        self.share_seed_loader = share_seed_loader
+        # A past diary topic related to today's talk; the last
+        # cluster of the day may return to it.
+        self.related_seed = related_seed
+        self._living_seed: dict | None = None
+        self._living_count = 0
         self.voice = voice
         self.video = video
         # Living lines breathe: in live operation a gap (minutes, from
@@ -82,15 +100,42 @@ class Day:
         self._release()  # hand VRAM to the video render that follows
         self._duty_with_media(member, "morning", text)
         self.result["morning"] = text
+        self.events.append({"minutes": MORNING_MINUTES, "member": member["name"],
+                            "topic": "朝の当番", "quote": text})
+
+    def _effective_living_seed(self) -> dict | None:
+        if self._living_seed is None:
+            share_seed = None
+            if self.share_seed_loader is not None:
+                try:
+                    share_seed = self.share_seed_loader()
+                except Exception:
+                    share_seed = None
+            self._living_seed = share_seed or self.seed
+            if share_seed:
+                self.events.append({
+                    "minutes": MORNING_MINUTES + 30,
+                    "member": share_seed["sourceMember"],
+                    "topic": share_seed["topic"],
+                    "quote": share_seed["quote"]})
+        # The day's last cluster may return to a related past topic.
+        if (self._living_count == len(LIVING_TIMES) - 1
+                and self.related_seed and self._living_seed
+                and self.related_seed["topic"] != self._living_seed["topic"]):
+            return self.related_seed
+        return self._living_seed
 
     def living(self, cluster_order: list[str] | None = None):
-        if not self.seed:
+        seed = self._effective_living_seed()
+        idx = min(self._living_count, len(LIVING_TIMES) - 1)
+        self._living_count += 1
+        if not seed:
             return
         # A one-line signpost first: the conversation runs in the
         # present progressive, so a glance should still be able to
         # tell what is being talked about.
         self.poster.post("living", "リビング",
-                         f"―― {self.seed['sourceMember']}の「{self.seed['topic']}」の話 ――")
+                         f"―― {seed['sourceMember']}の「{seed['topic']}」の話 ――")
         posted = {"n": 0}
 
         def on_line(t):
@@ -100,10 +145,17 @@ class Day:
             self.poster.post("living", t["name"], t["text"])
 
         transcript, pool_line = run_session(
-            self.seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm,
+            seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm,
             on_line=on_line)
         self.result["session"] = transcript
         self.result["pool_line"] = pool_line
+        if transcript:
+            closing = next(
+                (t for t in reversed(transcript)
+                 if t["name"] == seed["sourceMember"]), transcript[-1])
+            self.events.append({
+                "minutes": LIVING_TIMES[idx], "member": seed["sourceMember"],
+                "topic": seed["topic"], "quote": closing["text"], "open": True})
         self._release()
 
     def evening(self):
@@ -112,6 +164,8 @@ class Day:
         self._release()  # hand VRAM to the video render that follows
         self._duty_with_media(member, "evening", text)
         self.result["evening"] = text
+        self.events.append({"minutes": EVENING_MINUTES, "member": member["name"],
+                            "topic": "夜の当番", "quote": text})
 
     def diary(self, site_export_path: Path | None = None):
         writer = writer_for(self.date)
@@ -137,14 +191,20 @@ class Day:
             (self.out_dir / "diary-site.json").write_text(
                 json.dumps(site, ensure_ascii=False, indent=1), encoding="utf-8")
         self.result["seed"] = meta["seed"]
+        # Close the cycle: tonight's diary leaves tomorrow's seed
+        # and joins the archive its future topics may resurface from.
+        cycle.save_seed(self.out_dir, meta["seed"])
+        cycle.append_archive(self.out_dir, meta)
 
 
 def run_day(llm, poster, date: datetime.date, weather: dict | None,
-            yesterday_seed: dict | None, events: list[dict],
-            out_dir: Path, cluster_order: list[str] | None = None,
-            site_export_path: Path | None = None, voice=None, video=None) -> dict:
+            yesterday_seed: dict | None, events: list[dict] | None = None,
+            out_dir: Path = Path("out"), cluster_order: list[str] | None = None,
+            site_export_path: Path | None = None, voice=None, video=None,
+            share_seed_loader=None, related_seed: dict | None = None) -> dict:
     day = Day(llm, poster, date, weather, yesterday_seed, events, out_dir,
-              voice=voice, video=video)
+              voice=voice, video=video,
+              share_seed_loader=share_seed_loader, related_seed=related_seed)
     day.morning()
     day.living(cluster_order)
     day.evening()

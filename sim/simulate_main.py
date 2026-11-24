@@ -25,6 +25,7 @@ def main():
                    "「こんばんは、ステラです。明日の朝、またここで。」"],
         "spica": ["「パケットを放って測ってみようかな。」"],
         "sirius": ["朝は当番の声から始まった。", "午後、会話が行き来した。",
+                   "夜は当番の声で静かに閉じた。",
                    "言葉が次の言葉を呼ぶ日だった。",
                    "TITLE: 続きが届いた日\nEXCERPT: 昨日の続きが今日の会話になりました。",
                    "PREMISE: ステラのPingツールの話が続いている。\n"
@@ -56,7 +57,10 @@ def main():
         diary_post = poster.posts[-1]["text"]
         assert "いまの話" in diary_post and "前提:" in diary_post, diary_post
         assert (out / "diary-2026-11-23.md").exists() and (out / "diary-site.json").exists()
-        assert result["seed"]["topic"] == "Pingツールの続き"
+        # The diary's seed now comes from the day's own living room
+        # (the closing line, verbatim), not from the passed-in events.
+        assert result["seed"]["topic"] == "Pingツール", result["seed"]
+        assert result["seed"]["quote"] == "決まりね。", result["seed"]
         assert voice.calls == [("kohaku", "2026-11-23-morning.wav"),
                                ("stella", "2026-11-23-evening.wav")], voice.calls
     print("ALL CHECKS PASSED")

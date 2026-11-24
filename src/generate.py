@@ -11,7 +11,7 @@ import datetime
 
 from diary import block_of
 from personas import by_id
-from session import extract_line
+from session import extract_line, is_broken_line
 
 BLOCK_ORDER = ["朝のこと", "昼のこと", "午後のこと", "夕方のこと", "夜のこと"]
 
@@ -45,7 +45,13 @@ def duty_text(llm, member: dict, slot: str, weather: dict | None, seed: dict | N
                "台詞は70文字以内を目安に、短めにしてください。"
                "自分に話しかける形にはしないでください。")
     prompt = _persona_block(member) + "\n\n" + ask + "\n説明や例示は書かないでください。出すのは台詞だけです。"
-    return extract_line(llm.generate(prompt, member["id"]))
+    text = extract_line(llm.generate(prompt, member["id"]))
+    if is_broken_line(text):
+        # Same guard as the living room: a symbol-only greeting is
+        # not a greeting. One retry; duty is protected, so the retry
+        # is used as-is rather than posting nothing at all.
+        text = extract_line(llm.generate(prompt, member["id"]))
+    return text
 
 
 def _section_prompt(writer: dict, block: str, evs: list[dict]) -> str:

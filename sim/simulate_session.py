@@ -54,6 +54,21 @@ def main():
                 assert want not in prompt, f"prompt leaked another persona slice: {pid}"
     assert transcript[0]["text"] in llm.prompts[1], "second speaker must see the first line"
     assert "Pingツールの続き話をした" in pool_line
+
+    # Broken-line guard (live failure 2026-11-24, Stella's '...'):
+    # a symbol-only reply is regenerated once; if it stays broken,
+    # the turn is dropped and never reaches on_line.
+    posted: list[dict] = []
+    llm2 = FakeLLM({
+        "luna": ["「今日は静かだね。」"],
+        "stella": ["...", "「静けさは、余白に残すものよ。」"],
+        "spica": ["…", "�"],
+    })
+    transcript2, _ = run_session(SEED, ["luna", "stella", "spica"], llm2,
+                                 on_line=posted.append)
+    texts2 = [t["text"] for t in transcript2]
+    assert texts2 == ["今日は静かだね。", "静けさは、余白に残すものよ。"], texts2
+    assert [p["text"] for p in posted] == texts2, "a dropped turn must not be posted"
     print("ALL CHECKS PASSED")
 
 

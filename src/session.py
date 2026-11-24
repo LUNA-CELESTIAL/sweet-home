@@ -58,6 +58,17 @@ def extract_line(raw: str) -> str:
     return lines[-1] if lines else ""
 
 
+def is_broken_line(text: str) -> bool:
+    """A line with no words in it is not a line: empty, punctuation or
+    symbols only ('...', '…'), or carrying a replacement character
+    from a garbled decode. Seen live 2026-11-24: Stella's turn posted
+    as just '...'. Such lines are regenerated once, then dropped."""
+    import re
+    if "�" in text:
+        return True
+    return not re.search(r"\w", text)
+
+
 def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[dict], str]:
     """order: speaker ids in turn order, e.g. [opener, originator, guest, originator].
     on_line(entry) fires as each line is produced, so a live run posts
@@ -71,6 +82,10 @@ def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[d
         prompt = build_prompt(packet, transcript, speaker, repeat=pid in seen)
         seen.add(pid)
         text = extract_line(llm.generate(prompt, pid))
+        if is_broken_line(text):
+            text = extract_line(llm.generate(prompt, pid))  # one retry
+        if is_broken_line(text):
+            continue  # drop the turn rather than post a non-line
         entry = {"member": pid, "name": speaker["name"], "text": text}
         transcript.append(entry)
         if on_line is not None:

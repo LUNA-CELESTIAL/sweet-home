@@ -13,6 +13,7 @@ used and nothing leaves the machine.
 
 import argparse
 import datetime
+import json
 import os
 import sys
 import time
@@ -121,6 +122,34 @@ def main():
 
     if args.serve:
         TZ = house_tz(cfg)
+        if live:
+            # Discord-side pause control: poll #作業場 for 止めて /
+            # 再開して from the guild owner (or from the bot account,
+            # Luna's relay) and work the out/PAUSE switch. Failure to
+            # set it up never stops the house.
+            try:
+                import threading
+                import urllib.request as _u
+                from control import DiscordControl
+
+                def _get(path):
+                    req = _u.Request(f"https://discord.com/api/v10{path}",
+                                     headers={"Authorization": poster.token,
+                                              "User-Agent": "sweet-home/0.1"})
+                    with _u.urlopen(req, timeout=30) as res:
+                        return json.loads(res.read())
+
+                me = _get("/users/@me")
+                guild = _get(f"/guilds/{cfg['DISCORD_GUILD_ID']}")
+                control = DiscordControl(
+                    cfg["DISCORD_BOT_TOKEN"], cfg["DISCORD_CHANNEL_WORK_ID"],
+                    ROOT / "out" / "PAUSE", poster,
+                    ROOT / "out" / "control-state.json",
+                    {str(guild["owner_id"]), str(me["id"])})
+                threading.Thread(target=control.run_forever, daemon=True).start()
+                print("discord control: listening in the work channel")
+            except Exception as e:
+                print(f"discord control unavailable (house continues): {e}")
         # Plan-driven: each part of the day runs at its planned time,
         # heavy jobs keep their interval (enforced again inside the
         # video client), and the thermal guard can drop skippable

@@ -73,10 +73,15 @@ class DiscordControl:
         if self.last_seen is None:
             # First contact: take the newest message as the baseline
             # without acting on history — a command counts only when
-            # it arrives while the house is listening.
+            # it arrives while the house is listening. An empty
+            # channel gets the sentinel baseline "nothing yet", so
+            # the first real post is acted on, not swallowed as a
+            # baseline (see experiment.py).
             if messages:
                 self.last_seen = messages[0]["id"]
-                self._save_state()
+            else:
+                self.last_seen = "0"
+            self._save_state()
             return None
         action = None
         for msg in reversed(messages):  # oldest first

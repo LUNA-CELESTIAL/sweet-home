@@ -85,6 +85,24 @@ def main():
         assert experiment.pending_requests(out) == []
         assert run_pending(out, video, poster) is False  # nothing left
 
+        # Empty channel at first start: sentinel baseline, so the
+        # first real request is saved, not swallowed (2026-11-25).
+        batches_e = [[],
+                     [{"id": "21", "author": {"id": "bot"}, "content": REQUEST}]]
+        state_e = {"i": 0}
+
+        def fetch_e(after):
+            b = batches_e[state_e["i"]] if state_e["i"] < len(batches_e) else []
+            state_e["i"] += 1
+            return list(reversed(b))
+
+        watcher_e = ExperimentWatcher("Bot x", "work", out,
+                                      out / "state-e.json",
+                                      {"owner", "bot"}, fetch=fetch_e)
+        assert watcher_e.poll_once() is None
+        assert watcher_e.poll_once() is not None
+        assert (out / "experiments" / "21.json").exists()
+
     # Executor free-time checks (2026-11-25 shape): the wait is
     # sliced into ticks and the gap is offered throughout, so a
     # request posted mid-wait is picked up at the next check; one

@@ -103,7 +103,14 @@ class ExperimentWatcher:
         if self.last_seen is None:
             if messages:
                 self.last_seen = messages[0]["id"]
-                self._save_state()
+            else:
+                # Empty channel: the baseline is "nothing yet".
+                # The sentinel keeps the NEXT poll from treating
+                # the first real post as a baseline and swallowing
+                # it (2026-11-25: an empty work channel at first
+                # start ate the first experiment/vlog requests).
+                self.last_seen = "0"
+            self._save_state()
             return None
         found = None
         for msg in reversed(messages):  # oldest first

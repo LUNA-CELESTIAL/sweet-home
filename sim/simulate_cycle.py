@@ -98,8 +98,28 @@ def main():
         assert watcher.poll_once() == []  # baseline only
         found = watcher.poll_once()
         assert len(found) == 1 and found[0]["minutes"] == 10 * 60, found
+
         shares = cycle.load_shares(out, "2026-11-26")
         assert len(shares) == 1 and shares[0]["topic"].startswith("朝の動画"), shares
+
+        # Empty channel at first start: sentinel baseline, so the
+        # first real share is recorded, not swallowed.
+        batches_e = [[],
+                     [{"id": "9", "author": {"id": "owner"},
+                       "content": "これ見て https://example.com/a",
+                       "attachments": [],
+                       "timestamp": "2026-11-26T02:00:00+00:00"}]]
+        state_e = {"i": 0}
+
+        def fetch_e(cid, after):
+            b = batches_e[state_e["i"]] if state_e["i"] < len(batches_e) else []
+            state_e["i"] += 1
+            return list(reversed(b))
+
+        watcher_e = SharesWatcher("Bot x", ["vlog"], "owner", out,
+                                  out / "shares-state-e.json", TZ(), fetch=fetch_e)
+        assert watcher_e.poll_once() == []
+        assert len(watcher_e.poll_once()) == 1
 
         # --- Day 2: starts from day 1's seed; the share takes the
         # living room; the last cluster resurfaces a related past.

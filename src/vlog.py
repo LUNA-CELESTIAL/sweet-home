@@ -148,7 +148,12 @@ class VlogWatcher:
         if self.last_seen is None:
             if messages:
                 self.last_seen = messages[0]["id"]
-                self._save_state()
+            else:
+                # Empty channel: sentinel baseline "nothing yet",
+                # so the first real post is processed, not
+                # swallowed as a baseline (see experiment.py).
+                self.last_seen = "0"
+            self._save_state()
             return None
         acted = None
         for msg in reversed(messages):  # oldest first

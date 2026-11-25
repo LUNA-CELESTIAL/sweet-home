@@ -56,6 +56,22 @@ def main() -> None:
         confirmations = [p["text"] for p in poster.posts if p["channel"] == "work"]
         assert any("止めたよ" in t for t in confirmations), confirmations
         assert any("再開したよ" in t for t in confirmations), confirmations
+
+        # Empty channel at first start: the sentinel baseline means
+        # the FIRST real post is acted on, not swallowed (the
+        # 2026-11-25 bug that ate the first experiment/vlog posts).
+        batches2 = [[], [msg("20", OWNER, "止めて")]]
+        state2 = {"i": 0}
+
+        def fetch2(after):
+            batch = batches2[state2["i"]] if state2["i"] < len(batches2) else []
+            state2["i"] += 1
+            return list(reversed(batch))
+
+        ctl2 = DiscordControl("Bot x", "chan", pause, poster,
+                              root / "state2.json", {OWNER, BOT}, fetch=fetch2)
+        assert ctl2.poll_once() is None and not pause.exists()
+        assert ctl2.poll_once() == "pause" and pause.exists()
     print("control sim OK: baseline, owner/bot commands, stranger ignored, confirmations")
 
 

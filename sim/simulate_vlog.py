@@ -67,6 +67,22 @@ def main():
                               {"owner", "bot"}, fetch=fetch)
         assert watcher.poll_once() is None  # baseline
         assert watcher.poll_once() == "request"
+
+        # Empty channel at first start: sentinel baseline, so the
+        # first real request is saved, not swallowed (2026-11-25).
+        batches_e = [[],
+                     [{"id": "30", "author": {"id": "bot"}, "content": REQUEST}]]
+        state_e = {"i": 0}
+
+        def fetch_e(after):
+            b = batches_e[state_e["i"]] if state_e["i"] < len(batches_e) else []
+            state_e["i"] += 1
+            return list(reversed(b))
+
+        watcher_e = VlogWatcher("Bot x", "work", out, out / "state-e.json",
+                                {"owner", "bot"}, fetch=fetch_e)
+        assert watcher_e.poll_once() is None
+        assert watcher_e.poll_once() == "request"
         vlog.extract_frame_sheet = lambda p: None
         poster = ConsolePoster()
         video = FakeVideo()

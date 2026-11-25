@@ -64,7 +64,12 @@ class SharesWatcher:
             if self.last_seen[channel_id] is None:
                 if messages:
                     self.last_seen[channel_id] = messages[0]["id"]
-                    self._save_state()
+                else:
+                    # Sentinel baseline for an empty channel, so
+                    # the first real post is processed (see
+                    # experiment.py).
+                    self.last_seen[channel_id] = "0"
+                self._save_state()
                 continue
             for msg in reversed(messages):  # oldest first
                 self.last_seen[channel_id] = msg["id"]

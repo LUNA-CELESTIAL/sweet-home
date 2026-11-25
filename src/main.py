@@ -156,6 +156,13 @@ def main():
                     ROOT / "out" / "shares-state.json", TZ)
                 threading.Thread(target=watcher.run_forever, daemon=True).start()
                 print("shares watcher: listening in living/vlog")
+                from experiment import ExperimentWatcher
+                exp_watcher = ExperimentWatcher(
+                    cfg["DISCORD_BOT_TOKEN"], cfg["DISCORD_CHANNEL_WORK_ID"],
+                    ROOT / "out", ROOT / "out" / "experiment-state.json",
+                    {str(guild["owner_id"]), str(me["id"])})
+                threading.Thread(target=exp_watcher.run_forever, daemon=True).start()
+                print("experiment watcher: listening in the work channel")
             except Exception as e:
                 print(f"discord control unavailable (house continues): {e}")
         # Plan-driven: each part of the day runs at its planned time,
@@ -227,9 +234,22 @@ def main():
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")),
                                 heavy_cooldown_minutes=float(
                                     cfg.get("VIDEO_COOLDOWN_MINUTES", "10")))
+
+            def idle_experiment() -> bool:
+                # One-off experiments use the gaps, under the same
+                # promises: not while paused, not while hot. The
+                # video client itself adds pace and queue-wait.
+                if (ROOT / "out" / "PAUSE").exists() or video is None:
+                    return False
+                if temp_c() >= float(cfg.get("GPU_TEMP_LIMIT_C", "85")):
+                    return False
+                from experiment import run_pending
+                return run_pending(ROOT / "out", video, poster)
+
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
                          skip=done, on_done=mark_done,
-                         paused=lambda: (ROOT / "out" / "PAUSE").exists())
+                         paused=lambda: (ROOT / "out" / "PAUSE").exists(),
+                         idle=idle_experiment)
             print(f"day complete ({today})")
             # sleep to just past midnight, then build the next day
             now = datetime.datetime.now(TZ)

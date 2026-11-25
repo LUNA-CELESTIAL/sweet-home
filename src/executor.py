@@ -43,9 +43,20 @@ class Executor:
 
     def run(self, jobs: list[TimedJob], skip: set[str] | None = None,
             on_done: Callable[[str], None] | None = None,
-            paused: Callable[[], bool] | None = None) -> list[dict]:
+            paused: Callable[[], bool] | None = None,
+            idle: Callable[[], bool] | None = None) -> list[dict]:
         skip = skip or set()
         for job in sorted(jobs, key=lambda j: j.at):
+            if idle is not None:
+                # Free time before this job: a one-off experiment may
+                # use a long gap (render + cooldown must fit well
+                # inside it). The wait is recomputed afterwards, so
+                # the job still starts at its planned time.
+                if job.at - self.now() >= 25:
+                    try:
+                        idle()
+                    except Exception:
+                        pass
             if job.name in skip:
                 # Already completed before a restart: a lived day is
                 # not re-lived. (The video seed is per-date, so a

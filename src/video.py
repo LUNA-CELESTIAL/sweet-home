@@ -170,16 +170,24 @@ class ComfyUIClient:
     def generate(self, member: dict, slot: str, seed: int, out_path: Path,
                  image: str | None = None, speech: str | None = None,
                  weather: dict | None = None, duration: float = 5) -> Path:
+        image = image or f"deformer_{member['id']}.png"
+        return self.generate_raw(
+            build_video_prompt(member, slot, speech, weather, duration),
+            seed, out_path, image, duration)
+
+    def generate_raw(self, prompt_text: str, seed: int, out_path: Path,
+                     image: str, duration: float = 5) -> Path:
+        """One render with a caller-written prompt, verbatim — the
+        path experiment jobs use (the prompt is Luna's, the house
+        only renders). Same courtesies as duty: pace, readiness,
+        queue-wait."""
         if self.pace_seconds > 0 and self._last_gen_at is not None:
             remaining = self.pace_seconds - (self._clock() - self._last_gen_at)
             if remaining > 0:
                 self._sleep(remaining)
         self.wait_ready()
         self._wait_queue_clear()
-        image = image or f"deformer_{member['id']}.png"
-        workflow = fill_template(
-            self.workflow, build_video_prompt(member, slot, speech, weather, duration),
-            seed, image, duration)
+        workflow = fill_template(self.workflow, prompt_text, seed, image, duration)
         queued = self._json("/prompt", {"prompt": workflow})
         prompt_id = queued["prompt_id"]
         waited = 0

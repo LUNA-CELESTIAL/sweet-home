@@ -13,10 +13,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 import cycle  # noqa: E402
+import edit as edit_mod  # noqa: E402
 import vlog  # noqa: E402
 from llm import FakeLLM  # noqa: E402
 from poster import ConsolePoster  # noqa: E402
-from vlog import VlogWatcher, parse_memo, parse_reject, parse_vlog_request  # noqa: E402
+from vlog import (VlogWatcher, parse_memo, parse_reject,  # noqa: E402
+                  parse_vlog_request, split_memo_edit)
 
 REQUEST = """vlog：朝の光のなかで
 意図：お家の朝の静けさを見せたい
@@ -25,6 +27,16 @@ REQUEST = """vlog：朝の光のなかで
 プロンプト：
 The girl waits quietly, breathing gently, in soft morning light."""
 MEMO = "上映メモ：同じルナのまま、朝の光の中で静かに待っている。顔のずれなし。"
+THEMED = """vlog：蕾のそばで
+テーマ：そばにいる、という日常
+見どころ：最後の、カメラへの小さな微笑み
+意図：蕾が16日目。そばにいる小さな日常を見せたい
+画像：deformer_luna.png
+尺：5
+プロンプト：
+The girl sits beside a small potted plant with a single closed bud."""
+MEMO_EDIT = ("上映メモ：蕾のそばで静かに見ていて、最後に小さく微笑む。\n"
+             "編集：ループ、表紙：2.5")
 
 
 class FakeVideo:
@@ -52,6 +64,26 @@ def main():
     assert parse_reject(REJECT).startswith("目の色"), parse_reject(REJECT)
     assert parse_reject(REQUEST) is None
     assert parse_vlog_request(REJECT) is None and parse_memo(REJECT) is None
+
+    # Presentation fields and the edit vocabulary.
+    themed = parse_vlog_request(THEMED)
+    assert themed["theme"] == "そばにいる、という日常", themed
+    assert themed["highlight"].startswith("最後の"), themed
+    assert req["theme"] == "" and req["highlight"] == ""  # optional
+    body, edit_text = split_memo_edit(parse_memo(MEMO_EDIT))
+    assert "編集" not in body and "微笑む" in body, body
+    assert edit_text == "ループ、表紙：2.5", edit_text
+    spec = edit_mod.parse_edit_spec(edit_text)
+    assert spec["loop"] is True and spec["cover"] == 2.5, spec
+    spec2 = edit_mod.parse_edit_spec("トリミング：1.0-4.0、速度：0.5")
+    assert spec2["trim"] == (1.0, 4.0) and spec2["speed"] == 0.5, spec2
+    assert edit_mod.is_passthrough(edit_mod.parse_edit_spec(None))
+    assert edit_mod.is_passthrough(edit_mod.parse_edit_spec("そのまま"))
+    try:
+        edit_mod.parse_edit_spec("キラキラ加工")
+        raise AssertionError("unknown edit token must raise")
+    except ValueError:
+        pass
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
@@ -95,6 +127,10 @@ def main():
         assert any("プレビュー" in t for t in work_texts), work_texts
         assert not [p for p in poster.posts if p["channel"] == "vlog"]
         assert watcher.poll_once() == "memo"
+
+        # No edit line in the memo: the edit step passes through.
+        assert vlog.run_edit(out, poster) is True
+        assert vlog.requests_by_state(out, "edited"), "not edited"
 
         script = {pid: ["「静けさが、ちゃんと届いたよ。」"] * 2
                   for pid in ("sirius", "spica", "stella", "selene",
@@ -184,6 +220,97 @@ def main():
         assert watcher_t.poll_once() == "memo"
         ready = vlog.requests_by_state(out, "memo_ready")
         assert len(ready) == 1 and ready[0][0].stem == "51", ready
+
+    # Presentation + edit: themed request, memo with an edit line.
+    # The screening post carries テーマ/見どころ (never 意図), the
+    # cover goes first, the screened file is the edited one, and
+    # impressions are fed the 見どころ.
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td)
+        r = parse_vlog_request(THEMED)
+        r["id"] = "60"
+        r["state"] = "previewed"
+        vlog._save(vlog._req_dir(out) / "60.json", r)
+        (vlog._req_dir(out) / "60.mp4").write_bytes(b"raw")
+        batches_p = [
+            [{"id": "61", "author": {"id": "bot"}, "content": "プレビュー"}],
+            [{"id": "62", "author": {"id": "bot"}, "content": MEMO_EDIT}],
+        ]
+        state_p = {"i": 0}
+
+        def fetch_p(after):
+            b = batches_p[state_p["i"]] if state_p["i"] < len(batches_p) else []
+            state_p["i"] += 1
+            return list(reversed(b))
+
+        watcher_p = VlogWatcher("Bot x", "work", out, out / "state-p.json",
+                                {"owner", "bot"}, fetch=fetch_p)
+        assert watcher_p.poll_once() is None
+        assert watcher_p.poll_once() == "memo"
+        _, stored = vlog.requests_by_state(out, "memo_ready")[0]
+        assert "編集" not in stored["memo"], stored["memo"]
+        assert stored["edit"] == "ループ、表紙：2.5", stored
+
+        calls = []
+
+        def fake_apply(src, spec, out_path):
+            calls.append(("apply", spec["loop"], spec["cover"]))
+            out_path.write_bytes(b"edited")
+            return out_path
+
+        def fake_cover(video, at, out_path):
+            calls.append(("cover", at, video.name))
+            out_path.write_bytes(b"png")
+            return out_path
+
+        orig_apply, orig_cover = edit_mod.apply_edit, edit_mod.extract_cover
+        edit_mod.apply_edit, edit_mod.extract_cover = fake_apply, fake_cover
+        try:
+            poster_p = ConsolePoster()
+            assert vlog.run_edit(out, poster_p) is True
+        finally:
+            edit_mod.apply_edit, edit_mod.extract_cover = orig_apply, orig_cover
+        assert calls[0][0] == "apply" and calls[0][1] is True, calls
+        assert calls[1] == ("cover", 2.5, "60-edited.mp4"), calls
+        _, stored = vlog.requests_by_state(out, "edited")[0]
+        assert stored["edited_file"] == "60-edited.mp4", stored
+
+        script = {pid: ["「最後の微笑み、見たよ。」"] * 2
+                  for pid in ("sirius", "spica", "stella", "selene",
+                                  "nano", "hina", "kohaku")}
+        llm_p = FakeLLM(script)
+        date = datetime.date(2026, 11, 26)
+        event = vlog.run_stage2(out, llm_p, poster_p, date, 15 * 60)
+        assert event is not None
+        posts = [p for p in poster_p.posts if p["channel"] == "vlog"]
+        assert posts[0]["text"].startswith("表紙"), posts[0]
+        assert str(posts[1]["file"]).endswith("60-edited.mp4"), posts[1]
+        assert "テーマ：そばにいる" in posts[1]["text"], posts[1]
+        assert "見どころ：最後の" in posts[1]["text"], posts[1]
+        assert "意図" not in posts[1]["text"], posts[1]
+        assert all("見どころ" in p for p in llm_p.prompts), llm_p.prompts[:1]
+
+        # Edit failure: closed as failed, #vlog stays clean.
+        r2 = parse_vlog_request(THEMED)
+        r2["id"] = "70"
+        r2["state"] = "memo_ready"
+        r2["memo"] = "蕾のそば。"
+        r2["edit"] = "ループ"
+        vlog._save(vlog._req_dir(out) / "70.json", r2)
+        (vlog._req_dir(out) / "70.mp4").write_bytes(b"raw")
+
+        def boom(src, spec, out_path):
+            raise RuntimeError("ffmpeg said no")
+
+        edit_mod.apply_edit = boom
+        try:
+            poster_f = ConsolePoster()
+            assert vlog.run_edit(out, poster_f) is True
+        finally:
+            edit_mod.apply_edit = orig_apply
+        assert vlog.requests_by_state(out, "failed"), "edit failure not closed"
+        assert not [p for p in poster_f.posts if p["channel"] == "vlog"]
+        assert any("編集が失敗" in p["text"] for p in poster_f.posts), poster_f.posts
     print("ALL CHECKS PASSED")
 
 

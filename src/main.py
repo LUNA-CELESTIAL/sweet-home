@@ -105,7 +105,7 @@ def print_queue_inventory(out_dir: Path) -> None:
                 exp_titles.append(p.stem)
         print(f"queue: experiments pending={len(exp_titles)} {exp_titles}",
               flush=True)
-        for state in ("pending", "previewed", "memo_ready"):
+        for state in ("pending", "previewed", "memo_ready", "edited"):
             titles = [r.get("title", "?")
                       for _, r in _vlog.requests_by_state(out_dir, state)]
             if titles:
@@ -301,6 +301,9 @@ def main():
                     return True
                 import vlog as _vlog
                 if _vlog.run_stage1(ROOT / "out", video, poster):
+                    idle_state["last"] = "ran"
+                    return True
+                if _vlog.run_edit(ROOT / "out", poster):
                     idle_state["last"] = "ran"
                     return True
                 event = _vlog.run_stage2(ROOT / "out", llm, poster, today,

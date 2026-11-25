@@ -28,6 +28,7 @@ import urllib.request
 from pathlib import Path
 
 import cycle
+import edit as edit_mod
 from experiment import extract_frame_sheet
 from generate import _persona_block
 from personas import PERSONAS
@@ -44,10 +45,17 @@ def parse_vlog_request(content: str) -> dict | None:
     lines = text.splitlines()
     title = re.sub(r"^vlog[:：]", "", lines[0]).strip()
     intent, image, duration = "", DEFAULT_IMAGE, 5.0
+    theme, highlight = "", ""
     prompt_lines: list[str] = []
     in_prompt = False
     for ln in lines[1:]:
         s = ln.strip()
+        if s.startswith("テーマ"):
+            theme = s.split("：", 1)[-1].split(":", 1)[-1].strip()
+            continue
+        if s.startswith("見どころ"):
+            highlight = s.split("：", 1)[-1].split(":", 1)[-1].strip()
+            continue
         if s.startswith("意図"):
             intent = s.split("：", 1)[-1].split(":", 1)[-1].strip()
             continue
@@ -67,7 +75,8 @@ def parse_vlog_request(content: str) -> dict | None:
     prompt = "\n".join(prompt_lines).strip().strip("`").strip()
     if not title or not prompt:
         return None
-    return {"title": title, "intent": intent, "image": image,
+    return {"title": title, "intent": intent, "theme": theme,
+            "highlight": highlight, "image": image,
             "duration": duration, "prompt": prompt, "state": "pending"}
 
 
@@ -79,6 +88,21 @@ def parse_memo(content: str) -> str | None:
     head = re.sub(r"^上映メモ[:：]?", "", head).strip()
     memo = (head + "\n" + rest).strip() if rest else head
     return memo or None
+
+
+def split_memo_edit(memo: str) -> tuple[str, str | None]:
+    """Split the 編集： line out of a screening memo. The memo body
+    (what the sisters and the diary cycle read) never carries the
+    edit instruction; the edit text is stored separately."""
+    body_lines: list[str] = []
+    edit_text: str | None = None
+    for ln in memo.splitlines():
+        s = ln.strip()
+        if s.startswith("編集：") or s.startswith("編集:"):
+            edit_text = s[len("編集"):].lstrip("：:").strip()
+            continue
+        body_lines.append(ln)
+    return "\n".join(body_lines).strip(), edit_text
 
 
 def parse_reject(content: str) -> str | None:
@@ -209,11 +233,15 @@ class VlogWatcher:
                 previewed = requests_by_state(self.out_dir, "previewed")
                 if len(previewed) == 1:
                     path, req = previewed[0]
-                    req["memo"] = memo
+                    body, edit_text = split_memo_edit(memo)
+                    req["memo"] = body
+                    req["edit"] = edit_text
                     req["state"] = "memo_ready"
                     _save(path, req)
                     print(f"vlog: screening memo received for "
-                          f"'{req['title']}'", flush=True)
+                          f"'{req['title']}'"
+                          + (f" (edit: {edit_text})" if edit_text else ""),
+                          flush=True)
                     acted = "memo"
         if messages:
             self._save_state()
@@ -260,10 +288,49 @@ def run_stage1(out_dir: Path, video, poster) -> bool:
     return True
 
 
+def run_edit(out_dir: Path, poster) -> bool:
+    """Apply the memo's edit instruction to the oldest memo-ready
+    take. Passthrough when there is no instruction. Failure closes
+    the request as failed and reaches only the work channel — an
+    unedited cut is never screened silently in its place."""
+    ready = requests_by_state(out_dir, "memo_ready")
+    if not ready:
+        return False
+    path, req = ready[0]
+    print(f"vlog: edit starting '{req['title']}' "
+          f"(edit: {req.get('edit') or 'そのまま'})", flush=True)
+    src = _req_dir(out_dir) / f"{path.stem}.mp4"
+    try:
+        spec = edit_mod.parse_edit_spec(req.get("edit"))
+        if edit_mod.is_passthrough(spec):
+            req["edited_file"] = src.name
+        else:
+            out_video = _req_dir(out_dir) / f"{path.stem}-edited.mp4"
+            edit_mod.apply_edit(src, spec, out_video)
+            req["edited_file"] = out_video.name
+            if spec["cover"] is not None:
+                cover = _req_dir(out_dir) / f"{path.stem}-cover.png"
+                edit_mod.extract_cover(out_video, spec["cover"], cover)
+                req["cover_file"] = cover.name
+        req["edit_spec"] = spec
+        req["state"] = "edited"
+        print(f"vlog: edit done '{req['title']}' -> {req['edited_file']}",
+              flush=True)
+    except Exception as e:
+        print(f"vlog: edit FAILED '{req['title']}': {e}", flush=True)
+        poster.post("work", "vlog",
+                    f"vlogの編集が失敗したよ: {e}\nタイトル: {req['title']}")
+        req["state"] = "failed"
+    _save(path, req)
+    return True
+
+
 def _impression(llm, member: dict, req: dict) -> str:
     prompt = (
         _persona_block(member)
         + f"\n\nルナが監督した短い動画「{req['title']}」の上映を見たところです。"
+        + (f"\nテーマ: {req['theme']}" if req.get("theme") else "")
+        + (f"\n見どころ: {req['highlight']}" if req.get("highlight") else "")
         + f"\n意図（何を見せたいか）: {req['intent']}"
         + f"\n実際に映っていたこと（ルナの上映メモ）: {req['memo']}"
         + "\n感想を、台詞ひとつ分だけ、「」で囲んで短く書いてください。"
@@ -275,17 +342,27 @@ def _impression(llm, member: dict, req: dict) -> str:
 
 
 def run_stage2(out_dir: Path, llm, poster, date, event_minutes: int) -> dict | None:
-    """Post the oldest memo-ready vlog to #vlog with the sisters'
-    impressions, and join the day's cycle. Returns the diary-pool
+    """Post the oldest edited vlog to #vlog with the sisters'
+    impressions, and join the day's cycle. The presentation is the
+    title plus the audience-facing テーマ / 見どころ; the 意図
+    stays the director's private note (material for impressions,
+    never part of the screening post). Returns the diary-pool
     event, or None when nothing was ready."""
-    ready = requests_by_state(out_dir, "memo_ready")
+    ready = requests_by_state(out_dir, "edited")
     if not ready:
         return None
     path, req = ready[0]
     print(f"vlog: stage 2 (screening) starting '{req['title']}'", flush=True)
-    out_video = _req_dir(out_dir) / f"{path.stem}.mp4"
-    poster.post("vlog", "ルナ",
-                f"{req['title']}\n意図: {req['intent']}", file_path=out_video)
+    out_video = _req_dir(out_dir) / req.get("edited_file", f"{path.stem}.mp4")
+    if req.get("cover_file"):
+        poster.post("vlog", "ルナ", f"表紙：{req['title']}",
+                    file_path=_req_dir(out_dir) / req["cover_file"])
+    lines = [req["title"]]
+    if req.get("theme"):
+        lines.append(f"テーマ：{req['theme']}")
+    if req.get("highlight"):
+        lines.append(f"見どころ：{req['highlight']}")
+    poster.post("vlog", "ルナ", "\n".join(lines), file_path=out_video)
     pool = [p for p in PERSONAS if p["id"] != "luna"]
     start = date.toordinal() % len(pool)
     viewers = [pool[(start + i) % len(pool)] for i in range(3)]

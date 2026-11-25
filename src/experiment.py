@@ -119,6 +119,8 @@ class ExperimentWatcher:
             req_dir.mkdir(parents=True, exist_ok=True)
             (req_dir / f"{msg['id']}.json").write_text(
                 json.dumps(req, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"experiment: request received '{req['note']}' "
+                  f"(image={req['image']}, {req['duration']}s)", flush=True)
             found = req
         if messages:
             self._save_state()
@@ -162,6 +164,7 @@ def run_pending(out_dir: Path, video, poster) -> bool:
         return False
     req_path = pending[0]
     req = json.loads(req_path.read_text(encoding="utf-8"))
+    print(f"experiment: starting '{req['note']}'", flush=True)
     out_video = out_dir / "experiments" / f"{req_path.stem}.mp4"
     try:
         video.generate_raw(req["prompt"], abs(hash(req_path.stem)) % 100_000,
@@ -177,7 +180,9 @@ def run_pending(out_dir: Path, video, poster) -> bool:
                         file_path=sheet)
         else:
             poster.post("work", "実験", "フレーム切り出しはできなかった。動画の方を見てね。")
+        print(f"experiment: done '{req['note']}'", flush=True)
     except Exception as e:
+        print(f"experiment: FAILED '{req['note']}': {e}", flush=True)
         poster.post("work", "実験",
                     f"実験が失敗したよ: {e}\n使おうとしたプロンプト:\n{req['prompt']}")
     (req_path.parent / f"{req_path.stem}.done").touch()

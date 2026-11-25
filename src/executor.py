@@ -86,6 +86,7 @@ class Executor:
                 # re-run would even produce the identical video.)
                 self.log.append({"name": job.name, "action": "skipped (done)",
                                  "at": self.now()})
+                print(f"job '{job.name}': skipped (already done)", flush=True)
                 continue
             self._wait_until(job.at, idle)
             if paused is not None and paused():
@@ -94,15 +95,20 @@ class Executor:
                 # The job is let go (and marked done, so lifting the
                 # pause does not fire a catch-up burst later).
                 self.log.append({"name": job.name, "action": "paused", "at": self.now()})
+                print(f"job '{job.name}': let go (experiment mode / PAUSE)",
+                      flush=True)
                 if on_done is not None:
                     on_done(job.name)
                 continue
             if job.heavy and not job.protected and self.temp_c() >= self.temp_limit_c:
                 self.log.append({"name": job.name, "action": "dropped",
                                  "note": "thermal guard", "at": self.now()})
+                print(f"job '{job.name}': dropped (thermal guard)", flush=True)
                 continue
+            print(f"job '{job.name}': starting", flush=True)
             job.fn()
             self.log.append({"name": job.name, "action": "run", "at": self.now()})
+            print(f"job '{job.name}': done", flush=True)
             if on_done is not None:
                 on_done(job.name)
             if job.heavy and self.heavy_cooldown_minutes > 0:

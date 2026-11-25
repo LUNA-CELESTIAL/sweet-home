@@ -89,6 +89,31 @@ def build_runtime(cfg: dict):
     return ConsolePoster(), llm, False
 
 
+def print_queue_inventory(out_dir: Path) -> None:
+    """What free-time work is waiting, read from the request files
+    themselves — so right after a restart the log shows whether the
+    queue survived and what will run in the next gap."""
+    try:
+        import experiment as _exp
+        import vlog as _vlog
+        exp_titles = []
+        for p in _exp.pending_requests(out_dir):
+            try:
+                exp_titles.append(json.loads(
+                    p.read_text(encoding="utf-8")).get("note", p.stem))
+            except Exception:
+                exp_titles.append(p.stem)
+        print(f"queue: experiments pending={len(exp_titles)} {exp_titles}",
+              flush=True)
+        for state in ("pending", "previewed", "memo_ready"):
+            titles = [r.get("title", "?")
+                      for _, r in _vlog.requests_by_state(out_dir, state)]
+            if titles:
+                print(f"queue: vlog {state}={len(titles)} {titles}", flush=True)
+    except Exception as e:
+        print(f"queue: inventory failed: {e}", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true")
@@ -242,29 +267,52 @@ def main():
                                 heavy_cooldown_minutes=float(
                                     cfg.get("VIDEO_COOLDOWN_MINUTES", "10")))
 
+            idle_state = {"last": None}
+
             def idle_free_time() -> bool:
                 # Free-time work, one piece per gap, under the same
                 # promises: not while paused, not while hot. The
                 # video client itself adds pace and queue-wait.
                 # Order: experiments, then vlog stage 1 (render),
                 # then vlog stage 2 (screening + impressions).
-                if (ROOT / "out" / "PAUSE").exists() or video is None:
+                # The no-work outcomes are logged only when they
+                # change, so the log shows state, not noise; pieces
+                # that run log themselves in their own modules.
+                def note(category: str, message: str | None = None):
+                    if category != idle_state["last"]:
+                        if message:
+                            print(message, flush=True)
+                        idle_state["last"] = category
+
+                if (ROOT / "out" / "PAUSE").exists():
+                    note("blocked-pause",
+                         "free time: hands off (experiment mode / PAUSE)")
+                    return False
+                if video is None:
+                    note("blocked-novid",
+                         "free time: no video client — renders cannot run")
                     return False
                 if temp_c() >= float(cfg.get("GPU_TEMP_LIMIT_C", "85")):
+                    note("blocked-hot", "free time: too hot — holding off")
                     return False
                 from experiment import run_pending
                 if run_pending(ROOT / "out", video, poster):
+                    idle_state["last"] = "ran"
                     return True
                 import vlog as _vlog
                 if _vlog.run_stage1(ROOT / "out", video, poster):
+                    idle_state["last"] = "ran"
                     return True
                 event = _vlog.run_stage2(ROOT / "out", llm, poster, today,
                                          int(now_minutes()))
                 if event is not None:
                     day.events.append(event)
+                    idle_state["last"] = "ran"
                     return True
+                note("none", "free time: nothing pending")
                 return False
 
+            print_queue_inventory(ROOT / "out")
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
                          skip=done, on_done=mark_done,
                          paused=lambda: (ROOT / "out" / "PAUSE").exists(),

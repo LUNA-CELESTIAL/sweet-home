@@ -161,6 +161,8 @@ class VlogWatcher:
             if req is not None:
                 req["id"] = msg["id"]
                 _save(_req_dir(self.out_dir) / f"{msg['id']}.json", req)
+                print(f"vlog: request received '{req['title']}' "
+                      f"(image={req['image']}, {req['duration']}s)", flush=True)
                 acted = "request"
                 continue
             memo = parse_memo(content)
@@ -171,6 +173,8 @@ class VlogWatcher:
                     req["memo"] = memo
                     req["state"] = "memo_ready"
                     _save(path, req)
+                    print(f"vlog: screening memo received for "
+                          f"'{req['title']}'", flush=True)
                     acted = "memo"
         if messages:
             self._save_state()
@@ -190,6 +194,7 @@ def run_stage1(out_dir: Path, video, poster) -> bool:
     if not pending or video is None:
         return False
     path, req = pending[0]
+    print(f"vlog: stage 1 (render) starting '{req['title']}'", flush=True)
     out_video = _req_dir(out_dir) / f"{path.stem}.mp4"
     try:
         video.generate_raw(req["prompt"], abs(hash(path.stem)) % 100_000,
@@ -205,7 +210,10 @@ def run_stage1(out_dir: Path, video, poster) -> bool:
             poster.post("work", "vlog", "フレーム切り出し（1fps、左から1秒ごと）",
                         file_path=sheet)
         req["state"] = "previewed"
+        print(f"vlog: stage 1 done '{req['title']}' — preview posted, "
+              "waiting for the screening memo", flush=True)
     except Exception as e:
+        print(f"vlog: stage 1 FAILED '{req['title']}': {e}", flush=True)
         poster.post("work", "vlog",
                     f"vlogの生成が失敗したよ: {e}\nタイトル: {req['title']}")
         req["state"] = "failed"
@@ -235,6 +243,7 @@ def run_stage2(out_dir: Path, llm, poster, date, event_minutes: int) -> dict | N
     if not ready:
         return None
     path, req = ready[0]
+    print(f"vlog: stage 2 (screening) starting '{req['title']}'", flush=True)
     out_video = _req_dir(out_dir) / f"{path.stem}.mp4"
     poster.post("vlog", "ルナ",
                 f"{req['title']}\n意図: {req['intent']}", file_path=out_video)
@@ -251,6 +260,8 @@ def run_stage2(out_dir: Path, llm, poster, date, event_minutes: int) -> dict | N
     req["state"] = "screened"
     req["impressions"] = impressions
     _save(path, req)
+    print(f"vlog: stage 2 done '{req['title']}' — screened in #vlog "
+          f"with {len(impressions)} impressions", flush=True)
     cycle.append_share(out_dir, date.isoformat(), {
         "id": f"vlog-{path.stem}", "member": "ルナ", "text": req["memo"],
         "url": "", "topic": req["title"], "minutes": event_minutes})

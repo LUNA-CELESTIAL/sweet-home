@@ -16,7 +16,7 @@ from experiment import ExperimentWatcher, parse_request, run_pending  # noqa: E4
 from poster import ConsolePoster  # noqa: E402
 
 REQUEST = """実験：フレーム切り出しテスト（待ってる姿）
-画像：krea2_identity_edit_00869_.png
+画像：deformer_luna.png
 尺：5
 プロンプト：
 The girl in the image is waiting quietly in place. She breathes gently,
@@ -38,7 +38,7 @@ class FakeClock:
 
 def main():
     req = parse_request(REQUEST)
-    assert req is not None and req["image"] == "krea2_identity_edit_00869_.png", req
+    assert req is not None and req["image"] == "deformer_luna.png", req
     assert req["duration"] == 5.0 and req["prompt"].startswith("The girl"), req
     assert req["note"].startswith("フレーム切り出し"), req
     assert parse_request("おはよう") is None
@@ -79,7 +79,7 @@ def main():
         poster = ConsolePoster()
         experiment.extract_frame_sheet = lambda p: None  # no ffmpeg here
         assert run_pending(out, video, poster) is True
-        assert video.calls and video.calls[0][1].startswith("krea2"), video.calls
+        assert video.calls and video.calls[0][1].startswith("deformer_luna"), video.calls
         texts = [p["text"] for p in poster.posts if p["channel"] == "work"]
         assert any("実験の結果" in t and "The girl" in t for t in texts), texts
         assert experiment.pending_requests(out) == []

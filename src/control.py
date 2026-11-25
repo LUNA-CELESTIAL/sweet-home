@@ -17,7 +17,9 @@ import urllib.request
 from pathlib import Path
 
 PAUSE_WORDS = ("止めて", "止める", "ストップ", "pause")
-RESUME_WORDS = ("再開して", "再開", "resume")
+# Imperative forms only: the bare 再開 would also match the house's
+# own confirmation post (「再開したよ」) and re-read it as a command.
+RESUME_WORDS = ("再開して", "再開する", "resume")
 
 
 def parse_command(content: str) -> str | None:

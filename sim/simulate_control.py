@@ -24,6 +24,7 @@ def main() -> None:
     assert parse_command("止めて、実験する") == "pause"
     assert parse_command("再開して") == "resume"
     assert parse_command("止めたよ。次のジョブから手放すね。再開は「再開して」で。") is None
+    assert parse_command("再開したよ。次のジョブから普通に動くね。") is None
     assert parse_command("おはよう") is None
 
     with tempfile.TemporaryDirectory() as td:

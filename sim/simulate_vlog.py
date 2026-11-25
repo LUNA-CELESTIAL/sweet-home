@@ -20,7 +20,7 @@ from vlog import VlogWatcher, parse_memo, parse_vlog_request  # noqa: E402
 
 REQUEST = """vlog：朝の光のなかで
 意図：お家の朝の静けさを見せたい
-画像：krea2_identity_edit_00869_.png
+画像：deformer_luna.png
 尺：5
 プロンプト：
 The girl waits quietly, breathing gently, in soft morning light."""

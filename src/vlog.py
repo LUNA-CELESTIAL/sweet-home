@@ -33,7 +33,7 @@ from generate import _persona_block
 from personas import PERSONAS
 from session import extract_line, is_broken_line
 
-DEFAULT_IMAGE = "krea2_identity_edit_00869_.png"
+DEFAULT_IMAGE = "deformer_luna.png"
 REQ_DIR = "vlog-requests"
 
 

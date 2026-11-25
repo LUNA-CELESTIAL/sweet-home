@@ -26,7 +26,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-DEFAULT_IMAGE = "krea2_identity_edit_00869_.png"
+DEFAULT_IMAGE = "deformer_luna.png"
 
 
 def parse_request(content: str) -> dict | None:

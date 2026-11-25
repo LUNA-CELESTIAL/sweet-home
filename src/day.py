@@ -205,11 +205,18 @@ class Day:
                                yesterday_seed=self.seed)
         self._release()
         thread = meta.get("thread") or {}
-        diary_post = f"{meta['title']}\n{meta['siteExcerpt']}"
+        # The Discord post carries the diary itself — the sections
+        # written from the day's events and words — not only the
+        # title and the (site-facing) excerpt. The excerpt stays
+        # with the site entry; a reader of #日記 meets the day.
+        body = md.split("\n", 1)[1].strip() if "\n" in md else md
+        diary_post = f"{meta['title']}\n\n{body}"
         if thread:
             diary_post += (f"\n\n―― いまの話 ――\n前提: {thread['premise']}"
                            f"\n今日の進み: {thread['progress']}"
                            f"\n残っている問い: {thread['question']}")
+        if len(diary_post) > 1950:  # stay inside Discord's limit
+            diary_post = diary_post[:1900].rsplit("\n", 1)[0] + "\n…"
         self.poster.post("diary", writer["name"], diary_post)
         self.result["diary"] = meta
         (self.out_dir / f"diary-{self.date.isoformat()}.md").write_text(md, encoding="utf-8")

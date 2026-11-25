@@ -48,7 +48,8 @@ def main():
     voice = FakeVoice()
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
-        result = run_day(FakeLLM(script), poster, datetime.date(2026, 11, 23),
+        llm = FakeLLM(script)
+        result = run_day(llm, poster, datetime.date(2026, 11, 23),
                          {"area": "東京地方", "raw": "晴れ", "rainy": False, "pop": "10"},
                          DEMO_SEED, DEMO_EVENTS, out,
                          site_export_path=ROOT / "export" / "diary.json", voice=voice)
@@ -57,6 +58,14 @@ def main():
                             "duty", "diary"], channels
         diary_post = poster.posts[-1]["text"]
         assert "いまの話" in diary_post and "前提:" in diary_post, diary_post
+        # The #日記 post carries the diary's sections themselves
+        # (the day's events and words), not only title + excerpt.
+        assert "## " in diary_post and "今日わかったこと" in diary_post, diary_post
+        # The closing / title prompts are fed the day's events as
+        # material, not just topic names, and the closing is asked
+        # to stay with the scenes rather than conclude.
+        assert any("材料 (今日の出来事)" in p and "結論や教訓にまとめない" in p
+                   for p in llm.prompts), "closing prompt lacks material"
         assert (out / "diary-2026-11-23.md").exists() and (out / "diary-site.json").exists()
         # The diary's seed now comes from the day's own living room
         # (the closing line, verbatim), not from the passed-in events.

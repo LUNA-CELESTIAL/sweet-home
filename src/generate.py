@@ -54,16 +54,24 @@ def duty_text(llm, member: dict, slot: str, weather: dict | None, seed: dict | N
     return text
 
 
-def _section_prompt(writer: dict, block: str, evs: list[dict]) -> str:
-    lines = [_persona_block(writer), "", f"今日の日記の「{block}」の節を書いてください。"]
-    lines.append("材料 (この時間帯の出来事):")
+def _events_lines(evs: list[dict]) -> list[str]:
+    lines = []
     for e in evs:
         line = f"- {e['member']}の「{e['topic']}」の話"
         if e.get("quote"):
             line += f"。本人の言葉: 「{e['quote']}」"
         lines.append(line)
+    return lines
+
+
+def _section_prompt(writer: dict, block: str, evs: list[dict]) -> str:
+    lines = [_persona_block(writer), "", f"今日の日記の「{block}」の節を書いてください。"]
+    lines.append("材料 (この時間帯の出来事):")
+    lines += _events_lines(evs)
     lines.append(
         "書き手としての一人称で、2〜4文の短い散文にしてください。"
+        "起きた順に、誰が何をしたか・何と言ったかを残してください。"
+        "まとめや結論にしないでください。"
         "材料の引用は必要な時だけ、原文のまま使ってください。"
         "見出しや箇条書きは書かず、本文だけを出してください。")
     return "\n".join(lines)
@@ -128,17 +136,27 @@ def diary_prose(llm, writer: dict, date: datetime.date, events: list[dict],
         sections_md.append(f"## {block} — {sec['topic']}\n{para}")
 
     topics_line = "、".join(structure["topics"])
+    # The closing and the title/excerpt used to be generated from
+    # the topic NAMES alone — no events, no one's words — and came
+    # out as abstract conclusions. They now get the same material
+    # as the sections, and the closing is asked to stay with the
+    # day's scenes rather than sum the day up.
+    materials = "\n".join(_events_lines(events))
     closing_prompt = (
         _persona_block(writer)
-        + f"\n\n今日の日記の締め「今日わかったこと」を、書き手の一人称で2〜3文書いてください。"
-        + f"今日の話題: {topics_line}。見出しは書かず、本文だけを出してください。")
+        + "\n\n今日の日記の締めを、書き手の一人称で2〜3文書いてください。"
+        + "\n材料 (今日の出来事):\n" + materials
+        + "\n結論や教訓にまとめないでください。今日の場面と、誰かの言葉から書いてください。"
+        + "見出しは書かず、本文だけを出してください。")
     closing = llm.generate(closing_prompt, writer["id"]).strip()
     sections_md.append(f"## 今日わかったこと\n{closing}")
 
     meta_prompt = (
         _persona_block(writer)
         + "\n\n今日の日記に題と、サイト用の短い紹介文をつけてください。"
-        + f"今日の話題: {topics_line}。"
+        + f"\n今日の話題: {topics_line}。"
+        + "\n材料 (今日の出来事):\n" + materials
+        + "\n紹介文は、材料にある今日の出来事から書いてください。"
         + "\n次の形式だけで答えてください:\nTITLE: (題を1行)\nEXCERPT: (紹介文を2文まで)")
     meta_raw = llm.generate(meta_prompt, writer["id"])
     title, excerpt = "", ""

@@ -152,6 +152,38 @@ def main():
         assert vlog.requests_by_state(out, "memo_ready") == []
         assert vlog.run_stage2(out, FakeLLM({}), ConsolePoster(),
                                datetime.date(2026, 11, 26), 900) is None
+
+    # Two takes waiting (retake previewed before take 1 was
+    # closed): the reject closes the OLDEST one, and the memo then
+    # attaches to the remaining take.
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td)
+        for mid in ("50", "51"):
+            r = parse_vlog_request(REQUEST)
+            r["id"] = mid
+            r["state"] = "previewed"
+            vlog._save(vlog._req_dir(out) / f"{mid}.json", r)
+        batches_t = [
+            [{"id": "52", "author": {"id": "bot"}, "content": "プレビュー投稿"}],
+            [{"id": "53", "author": {"id": "bot"}, "content": REJECT}],
+            [{"id": "54", "author": {"id": "bot"}, "content": MEMO}],
+        ]
+        state_t = {"i": 0}
+
+        def fetch_t(after):
+            b = batches_t[state_t["i"]] if state_t["i"] < len(batches_t) else []
+            state_t["i"] += 1
+            return list(reversed(b))
+
+        watcher_t = VlogWatcher("Bot x", "work", out, out / "state-t.json",
+                                {"owner", "bot"}, fetch=fetch_t)
+        assert watcher_t.poll_once() is None  # baseline
+        assert watcher_t.poll_once() == "reject"
+        rejected = vlog.requests_by_state(out, "rejected")
+        assert len(rejected) == 1 and rejected[0][0].stem == "50", rejected
+        assert watcher_t.poll_once() == "memo"
+        ready = vlog.requests_by_state(out, "memo_ready")
+        assert len(ready) == 1 and ready[0][0].stem == "51", ready
     print("ALL CHECKS PASSED")
 
 

@@ -184,13 +184,18 @@ class VlogWatcher:
                 continue
             reason = parse_reject(content)
             if reason is not None:
-                # Close the single in-flight take (pending or
+                # Close the OLDEST in-flight take (pending or
                 # previewed) without screening it, so it can never
-                # take a memo or reach #vlog, and the next take's
-                # preview stands alone.
-                inflight = requests_by_state(self.out_dir, "previewed") \
-                    + requests_by_state(self.out_dir, "pending")
-                if len(inflight) == 1:
+                # take a memo or reach #vlog. Oldest, not "the only
+                # one": a retake's preview can already be waiting
+                # while the failed take is still open (2026-11-25,
+                # takes 1 and 2 of 蕾のそばで) — the one being
+                # rejected is always the earlier take.
+                inflight = sorted(
+                    requests_by_state(self.out_dir, "previewed")
+                    + requests_by_state(self.out_dir, "pending"),
+                    key=lambda t: t[0].name)
+                if inflight:
                     path, req = inflight[0]
                     req["state"] = "rejected"
                     req["reject_reason"] = reason

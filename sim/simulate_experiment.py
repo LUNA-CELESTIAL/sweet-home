@@ -85,22 +85,53 @@ def main():
         assert experiment.pending_requests(out) == []
         assert run_pending(out, video, poster) is False  # nothing left
 
-    # Executor idle hook: a long gap invites the experiment once;
-    # the job still starts at its planned time; short gaps do not.
+    # Executor free-time checks (2026-11-25 shape): the wait is
+    # sliced into ticks and the gap is offered throughout, so a
+    # request posted mid-wait is picked up at the next check; one
+    # piece per check, several across a long gap; the planned job
+    # still starts exactly on time; a gap under the margin (15 min)
+    # starts nothing.
     clock = FakeClock()
     used: list[float] = []
+    pieces = {"left": 2}
 
     def idle():
+        if pieces["left"] <= 0:
+            return False
+        pieces["left"] -= 1
         used.append(clock.minutes)
-        clock.minutes += 30  # the render consumed half an hour
+        clock.minutes += 3  # a render takes a few minutes
         return True
 
     ex = Executor(clock.now, clock.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
     ran: list[float] = []
-    ex.run([TimedJob(120, "living", lambda: ran.append(clock.minutes)),
-            TimedJob(130, "diary", lambda: None)], idle=idle)
-    assert used == [0.0], used
+    ex.run([TimedJob(120, "living", lambda: ran.append(clock.minutes))], idle=idle)
+    assert len(used) == 2 and used[0] == 0.0, used
     assert ran == [120.0], ran
+
+    # A request that only "arrives" at t=50 is picked up mid-wait.
+    clock2 = FakeClock()
+    picked: list[float] = []
+
+    def idle2():
+        if clock2.minutes >= 50 and not picked:
+            picked.append(clock2.minutes)
+            return True
+        return False
+
+    ex2 = Executor(clock2.now, clock2.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    ran2: list[float] = []
+    ex2.run([TimedJob(120, "living", lambda: ran2.append(clock2.minutes))], idle=idle2)
+    assert picked and 50 <= picked[0] < 120, picked
+    assert ran2 == [120.0], ran2
+
+    # Margin: a job 10 minutes out never starts free-time work.
+    clock3 = FakeClock()
+    called3: list[float] = []
+    ex3 = Executor(clock3.now, clock3.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    ex3.run([TimedJob(10, "duty", lambda: None)],
+            idle=lambda: called3.append(1) or True)
+    assert called3 == [], called3
     print("ALL CHECKS PASSED")
 
 

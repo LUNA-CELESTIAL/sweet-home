@@ -16,7 +16,7 @@ import cycle  # noqa: E402
 import vlog  # noqa: E402
 from llm import FakeLLM  # noqa: E402
 from poster import ConsolePoster  # noqa: E402
-from vlog import VlogWatcher, parse_memo, parse_vlog_request  # noqa: E402
+from vlog import VlogWatcher, parse_memo, parse_reject, parse_vlog_request  # noqa: E402
 
 REQUEST = """vlog：朝の光のなかで
 意図：お家の朝の静けさを見せたい
@@ -48,6 +48,10 @@ def main():
     assert parse_vlog_request("実験：べつもの") is None
     assert parse_memo(MEMO).startswith("同じルナ"), parse_memo(MEMO)
     assert parse_memo("おはよう") is None
+    REJECT = "vlog却下：目の色のドリフト（青く写っている）"
+    assert parse_reject(REJECT).startswith("目の色"), parse_reject(REJECT)
+    assert parse_reject(REQUEST) is None
+    assert parse_vlog_request(REJECT) is None and parse_memo(REJECT) is None
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
@@ -116,6 +120,38 @@ def main():
         assert vlog.run_stage1(out, FakeVideo(fail=True), poster2) is True
         assert not [p for p in poster2.posts if p["channel"] == "vlog"]
         assert vlog.requests_by_state(out, "failed"), "failure not closed"
+
+    # Reject path: a previewed take is closed by 「vlog却下：〜」 —
+    # it can no longer take a memo or be screened.
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td)
+        req3 = parse_vlog_request(REQUEST)
+        req3["id"] = "40"
+        req3["state"] = "previewed"
+        vlog._save(vlog._req_dir(out) / "40.json", req3)
+        batches_r = [
+            [{"id": "41", "author": {"id": "bot"}, "content": "プレビュー投稿"}],
+            [{"id": "42", "author": {"id": "bot"}, "content": REJECT}],
+            [{"id": "43", "author": {"id": "bot"}, "content": MEMO}],
+        ]
+        state_r = {"i": 0}
+
+        def fetch_r(after):
+            b = batches_r[state_r["i"]] if state_r["i"] < len(batches_r) else []
+            state_r["i"] += 1
+            return list(reversed(b))
+
+        watcher_r = VlogWatcher("Bot x", "work", out, out / "state-r.json",
+                                {"owner", "bot"}, fetch=fetch_r)
+        assert watcher_r.poll_once() is None  # baseline
+        assert watcher_r.poll_once() == "reject"
+        rejected = vlog.requests_by_state(out, "rejected")
+        assert len(rejected) == 1 \
+            and "目の色" in rejected[0][1]["reject_reason"], rejected
+        assert watcher_r.poll_once() is None  # memo finds no previewed take
+        assert vlog.requests_by_state(out, "memo_ready") == []
+        assert vlog.run_stage2(out, FakeLLM({}), ConsolePoster(),
+                               datetime.date(2026, 11, 26), 900) is None
     print("ALL CHECKS PASSED")
 
 

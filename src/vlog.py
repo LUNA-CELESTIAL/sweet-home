@@ -81,6 +81,18 @@ def parse_memo(content: str) -> str | None:
     return memo or None
 
 
+def parse_reject(content: str) -> str | None:
+    """「vlog却下：<理由>」 — Luna (the director) closes a take
+    without screening it. Returns the reason, or None."""
+    text = content.strip()
+    if not text.startswith("vlog却下"):
+        return None
+    head, _, rest = text.partition("\n")
+    reason = re.sub(r"^vlog却下[:：]?", "", head).strip()
+    reason = (reason + "\n" + rest).strip() if rest else reason
+    return reason or "理由の記入なし"
+
+
 def _req_dir(out_dir: Path) -> Path:
     d = out_dir / REQ_DIR
     d.mkdir(parents=True, exist_ok=True)
@@ -169,6 +181,23 @@ class VlogWatcher:
                 print(f"vlog: request received '{req['title']}' "
                       f"(image={req['image']}, {req['duration']}s)", flush=True)
                 acted = "request"
+                continue
+            reason = parse_reject(content)
+            if reason is not None:
+                # Close the single in-flight take (pending or
+                # previewed) without screening it, so it can never
+                # take a memo or reach #vlog, and the next take's
+                # preview stands alone.
+                inflight = requests_by_state(self.out_dir, "previewed") \
+                    + requests_by_state(self.out_dir, "pending")
+                if len(inflight) == 1:
+                    path, req = inflight[0]
+                    req["state"] = "rejected"
+                    req["reject_reason"] = reason
+                    _save(path, req)
+                    print(f"vlog: take rejected '{req['title']}': {reason}",
+                          flush=True)
+                    acted = "reject"
                 continue
             memo = parse_memo(content)
             if memo:

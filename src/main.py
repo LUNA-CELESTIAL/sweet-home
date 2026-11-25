@@ -163,6 +163,13 @@ def main():
                     {str(guild["owner_id"]), str(me["id"])})
                 threading.Thread(target=exp_watcher.run_forever, daemon=True).start()
                 print("experiment watcher: listening in the work channel")
+                from vlog import VlogWatcher
+                vlog_watcher = VlogWatcher(
+                    cfg["DISCORD_BOT_TOKEN"], cfg["DISCORD_CHANNEL_WORK_ID"],
+                    ROOT / "out", ROOT / "out" / "vlog-state.json",
+                    {str(guild["owner_id"]), str(me["id"])})
+                threading.Thread(target=vlog_watcher.run_forever, daemon=True).start()
+                print("vlog watcher: listening in the work channel")
             except Exception as e:
                 print(f"discord control unavailable (house continues): {e}")
         # Plan-driven: each part of the day runs at its planned time,
@@ -235,21 +242,33 @@ def main():
                                 heavy_cooldown_minutes=float(
                                     cfg.get("VIDEO_COOLDOWN_MINUTES", "10")))
 
-            def idle_experiment() -> bool:
-                # One-off experiments use the gaps, under the same
+            def idle_free_time() -> bool:
+                # Free-time work, one piece per gap, under the same
                 # promises: not while paused, not while hot. The
                 # video client itself adds pace and queue-wait.
+                # Order: experiments, then vlog stage 1 (render),
+                # then vlog stage 2 (screening + impressions).
                 if (ROOT / "out" / "PAUSE").exists() or video is None:
                     return False
                 if temp_c() >= float(cfg.get("GPU_TEMP_LIMIT_C", "85")):
                     return False
                 from experiment import run_pending
-                return run_pending(ROOT / "out", video, poster)
+                if run_pending(ROOT / "out", video, poster):
+                    return True
+                import vlog as _vlog
+                if _vlog.run_stage1(ROOT / "out", video, poster):
+                    return True
+                event = _vlog.run_stage2(ROOT / "out", llm, poster, today,
+                                         int(now_minutes()))
+                if event is not None:
+                    day.events.append(event)
+                    return True
+                return False
 
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
                          skip=done, on_done=mark_done,
                          paused=lambda: (ROOT / "out" / "PAUSE").exists(),
-                         idle=idle_experiment)
+                         idle=idle_free_time)
             print(f"day complete ({today})")
             # sleep to just past midnight, then build the next day
             now = datetime.datetime.now(TZ)

@@ -19,8 +19,34 @@ from export_site import build_entry, merge
 from generate import diary_prose, duty_text
 from session import run_session
 
-DEFAULT_CLUSTER_ORDER = ["luna", "stella", "spica", "stella"]
 LIVING_TIMES = [10 * 60 + 30, 14 * 60 + 30, 17 * 60 + 30]
+
+
+def cluster_order_for(seed: dict, date: datetime.date, cluster_idx: int) -> list[str]:
+    """Who talks in a living cluster, by role — not a fixed rotation
+    of the whole house. The originator is the seed's source member;
+    opener and guests rotate by date. The day's three clusters take
+    three shapes: an exchange (two members back and forth), a join
+    (a guest steps in), and a widening (two guests). A line that
+    calls a member by name can still rewrite the next turn inside
+    run_session."""
+    from personas import PERSONAS
+    ids = [p["id"] for p in PERSONAS]
+    by_name = {p["name"]: p["id"] for p in PERSONAS}
+    originator = by_name.get(seed.get("sourceMember", ""))
+    rot = date.toordinal() % len(ids)
+    ring = [ids[(rot + k) % len(ids)] for k in range(len(ids))]
+    opener = next(i for i in ring if i != originator)
+    if originator is None:
+        # The seed came from outside the sisters (e.g. Ruru's
+        # share): another sister takes the originator's chair.
+        originator = next(i for i in ring if i != opener)
+    guests = [i for i in ring if i not in (opener, originator)]
+    if cluster_idx == 0:
+        return [opener, originator, opener, originator]
+    if cluster_idx == 1:
+        return [opener, originator, guests[0], originator]
+    return [opener, originator, guests[0], guests[1], originator]
 MORNING_MINUTES = 9 * 60 + 30
 EVENING_MINUTES = 20 * 60
 
@@ -131,11 +157,16 @@ class Day:
         self._living_count += 1
         if not seed:
             return
-        # A one-line signpost first: the conversation runs in the
-        # present progressive, so a glance should still be able to
-        # tell what is being talked about.
-        self.poster.post("living", "リビング",
-                         f"―― {seed['sourceMember']}の「{seed['topic']}」の話 ――")
+        # A signpost first: the conversation runs in the present
+        # progressive, so a glance should still be able to tell what
+        # is being talked about — the header names the topic, and a
+        # one-line explanation (composed by code from the seed's own
+        # material, never a new generation) says which thing it is.
+        header = f"―― {seed['sourceMember']}の「{seed['topic']}」の話 ――"
+        about = seed.get("about") or cycle.about_for_seed(seed)
+        if about:
+            header += f"\n{about}"
+        self.poster.post("living", "リビング", header)
         posted = {"n": 0}
 
         def on_line(t):
@@ -145,8 +176,8 @@ class Day:
             self.poster.post("living", t["name"], t["text"])
 
         transcript, pool_line = run_session(
-            seed, cluster_order or DEFAULT_CLUSTER_ORDER, self.llm,
-            on_line=on_line)
+            seed, cluster_order or cluster_order_for(seed, self.date, idx),
+            self.llm, on_line=on_line)
         self.result["session"] = transcript
         self.result["pool_line"] = pool_line
         if transcript:

@@ -21,10 +21,13 @@ SEED = {"topic": "Pingツール", "sourceMember": "ステラ",
 
 
 def main() -> None:
+    # Cluster shape 0 is an exchange: opener and originator speak
+    # twice each. Scripts carry two lines per member so the shape
+    # works whichever member the date rotation opens with.
     script = {
-        "luna": ["「ステラ、昨日の話の続き、聞かせて。」"],
+        "luna": ["「ステラ、昨日の話の続き、聞かせて。」", "「そっか、じゃあ決まりだね。」"],
         "stella": ["「うん、必要なものだけね。」", "「決まりね。」"],
-        "spica": ["「パケットを放って測ってみようかな。」"],
+        "spica": ["「パケットを放って測ってみようかな。」", "「うん、やってみよう。」"],
     }
     slept: list[float] = []
     with tempfile.TemporaryDirectory() as td:

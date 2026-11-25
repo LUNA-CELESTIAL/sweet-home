@@ -380,7 +380,8 @@ def run_stage2(out_dir: Path, llm, poster, date, event_minutes: int) -> dict | N
           f"with {len(impressions)} impressions", flush=True)
     cycle.append_share(out_dir, date.isoformat(), {
         "id": f"vlog-{path.stem}", "member": "ルナ", "text": req["memo"],
-        "url": "", "topic": req["title"], "minutes": event_minutes})
+        "url": "", "topic": req["title"], "minutes": event_minutes,
+        "theme": req.get("theme", ""), "highlight": req.get("highlight", "")})
     quote = impressions[0]["text"] if impressions else req["memo"]
     return {"minutes": event_minutes, "member": "ルナ",
             "topic": req["title"], "quote": quote, "open": True}

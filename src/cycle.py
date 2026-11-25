@@ -119,15 +119,51 @@ def share_to_seed(share: dict) -> dict:
     url = share.get("url") or ""
     quote = text if text else url
     topic = share.get("topic") or "共有されたもの"
-    return {
+    seed = {
         "topic": topic,
         "sourceMember": share.get("member", "るる"),
         "quote": quote,
         "note": f"{share.get('member', 'るる')}が置いていった「{topic}」の話。",
     }
+    if (share.get("id") or "").startswith("vlog-") \
+            or share.get("theme") or share.get("highlight"):
+        # A screened vlog: say which thing it is from its own
+        # presentation material (見どころ first, else the memo).
+        about = f"今日 #vlog で上映した5秒「{topic}」"
+        if share.get("highlight"):
+            about += f"。見どころ：{share['highlight']}"
+        else:
+            first = _first_sentence(text)
+            if first:
+                about += f"。{first}"
+        seed["about"] = about
+    else:
+        about = _first_sentence(quote)
+        if about:
+            seed["about"] = about
+    return seed
 
 
 _URL_RE = re.compile(r"https?://\S+")
+
+
+def _first_sentence(text: str, limit: int = 60) -> str:
+    """The first sentence of a text, URLs stripped — a one-line
+    explanation a reader can glance at. Empty when there is no
+    sentence to take (e.g. a bare URL)."""
+    t = _URL_RE.sub("", text or "").strip()
+    t = re.split(r"[。！？]", t)[0].strip()
+    return t[:limit]
+
+
+def about_for_seed(seed: dict) -> str:
+    """The header's explanation line for any seed: its stored about
+    when it has one, else the first sentence of its quote. Composed
+    by code from material the seed already carries — the living
+    room never spends a generation on a signpost."""
+    if seed.get("about"):
+        return seed["about"]
+    return _first_sentence(seed.get("quote", ""))
 
 
 def share_topic(text: str, has_video: bool, has_image: bool) -> str:

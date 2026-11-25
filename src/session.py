@@ -4,12 +4,29 @@
 - Each turn is an independent generate() call for one speaker, given:
   the packet, the actual transcript so far, and ONLY that speaker's
   persona slice.
-- Turn order and the stop are rules, not model decisions:
-  opener -> originator -> guest -> originator (close), max 5 turns.
+- Turn order is a rule-side pattern (exchange / join / widen, chosen
+  by the caller), max 5 turns — with one living exception: a line
+  that calls another member by name with a question passes the
+  baton, and that member takes the next turn.
+- The baton is carried in the prompt conditions, not in per-line
+  rules: answer the previous speaker's content first, then add your
+  own angle. Persona shows in how a member responds, not in a motif
+  inserted every line.
 - After the session, exactly one line goes to the event pool.
 """
 
-from personas import by_id
+from personas import PERSONAS, by_id
+
+
+def find_called_member(text: str, exclude_id: str) -> str | None:
+    """A baton pass: the line names another member and asks them
+    something (？). Returns that member's id, or None."""
+    if "？" not in text and "?" not in text:
+        return None
+    for p in PERSONAS:
+        if p["id"] != exclude_id and p["name"] in text:
+            return p["id"]
+    return None
 
 
 def build_packet(seed: dict) -> str:
@@ -21,7 +38,8 @@ def build_packet(seed: dict) -> str:
     )
 
 
-def build_prompt(packet: str, transcript: list[dict], speaker: dict, repeat: bool = False) -> str:
+def build_prompt(packet: str, transcript: list[dict], speaker: dict,
+                 repeat: bool = False, called: bool = False) -> str:
     lines = [packet, "", f"あなたは{speaker['name']}。やりたいこと: {speaker['want']}"]
     lines.append(f"あなたの関心の角度: {speaker['angle']}")
     lines.append(f"しないこと: {speaker['avoid']}")
@@ -31,13 +49,27 @@ def build_prompt(packet: str, transcript: list[dict], speaker: dict, repeat: boo
         lines.append("これまでの発言:")
         lines += [f"{t['name']}: {t['text']}" for t in transcript]
     lines.append("")
-    lines.append(
-        "次のあなたの発言を、台詞ひとつ分だけ、「」で囲んで書いてください。"
-        "直前の人の言葉を受け止めたうえで、同調の相槌だけで終わらせず、"
-        "あなたの関心の角度から新しい内容を一言足してください。"
-        "話題の引用をそのまま繰り返さないでください。"
-        "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
-    )
+    if called:
+        lines.append("直前の発言は、あなたへの問いかけです。まず、その問いに答えてください。")
+    if transcript:
+        lines.append(
+            "次のあなたの発言を、台詞ひとつ分だけ、「」で囲んで書いてください。"
+            "まず、直前の人の言葉の内容を受けて返してください（同意でも、押し返しでも、問い返しでも）。"
+            "キーワードだけを拾って、自分の話で完結させないでください。"
+            "そのうえで、あなたの関心の角度を足してください。"
+            "受けて返す時は、2〜3文でも構いません。"
+            "誰かに問いを渡したい時は、名前を呼んで問いかけてください。その人が次に答えます。"
+            "あなたの人格は、決め手の言葉やモチーフを毎回入れることではなく、返し方・受け取り方に出してください。"
+            "話題の引用をそのまま繰り返さないでください。"
+            "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
+        )
+    else:
+        lines.append(
+            "次のあなたの発言を、台詞ひとつ分だけ、「」で囲んで書いてください。"
+            "話題の口火を切ってください。誰かに問いを渡したい時は、名前を呼んで問いかけてください。"
+            "その人が次に答えます。"
+            "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
+        )
     if repeat:
         lines.append(
             "あなたはこの塊で2回目の発言です。さっきの自分の言い回しやモチーフは"
@@ -71,15 +103,20 @@ def is_broken_line(text: str) -> bool:
 
 def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[dict], str]:
     """order: speaker ids in turn order, e.g. [opener, originator, guest, originator].
+    A line that calls another member by name with a question rewrites
+    the next slot: the called member answers next.
     on_line(entry) fires as each line is produced, so a live run posts
     line by line instead of going silent until the cluster is done."""
     assert len(order) <= 5, "a cluster is at most 5 turns"
+    order = list(order)
     packet = build_packet(seed)
     transcript: list[dict] = []
     seen: set[str] = set()
-    for pid in order:
+    called_slots: set[int] = set()
+    for i, pid in enumerate(order):
         speaker = by_id(pid)
-        prompt = build_prompt(packet, transcript, speaker, repeat=pid in seen)
+        prompt = build_prompt(packet, transcript, speaker,
+                              repeat=pid in seen, called=i in called_slots)
         seen.add(pid)
         text = extract_line(llm.generate(prompt, pid))
         if is_broken_line(text):
@@ -90,6 +127,10 @@ def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[d
         transcript.append(entry)
         if on_line is not None:
             on_line(entry)
+        called = find_called_member(text, pid)
+        if called is not None and i + 1 < len(order):
+            order[i + 1] = called
+            called_slots.add(i + 1)
     names = "→".join(dict.fromkeys(t["name"] for t in transcript))
     pool_line = f"{seed['topic']}の続き話をした ({names})"
     return transcript, pool_line

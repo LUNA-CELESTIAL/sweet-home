@@ -289,6 +289,9 @@ def main():
         assert "見どころ：最後の" in posts[1]["text"], posts[1]
         assert "意図" not in posts[1]["text"], posts[1]
         assert all("見どころ" in p for p in llm_p.prompts), llm_p.prompts[:1]
+        shares_p = cycle.load_shares(out, date.isoformat())
+        assert shares_p and shares_p[0].get("highlight", "").startswith("最後の"), shares_p
+        assert shares_p[0].get("theme", "").startswith("そばにいる"), shares_p
 
         # Edit failure: closed as failed, #vlog stays clean.
         r2 = parse_vlog_request(THEMED)

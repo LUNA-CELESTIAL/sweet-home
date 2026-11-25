@@ -147,6 +147,30 @@ def main():
                     if p["channel"] == "living" and p["author"] == "リビング"]
         assert "朝の動画できた" in headings[0], headings
         assert "水やりの花と蕾" in headings[-1], headings
+        # The header carries a one-line explanation under the title
+        # line (composed from the seed's own material).
+        assert "\n" in headings[0], headings[0]
+
+        # share_to_seed's about: vlog shares explain themselves from
+        # their presentation material; plain shares from their first
+        # sentence; a bare URL gets none.
+        vlog_seed = cycle.share_to_seed({
+            "id": "vlog-9", "member": "ルナ", "topic": "蕾のそばで",
+            "text": "窓辺の蕾のそばに座っている。最後に微笑む。",
+            "highlight": "最後の、カメラへの小さな微笑み"})
+        assert vlog_seed["about"].startswith("今日 #vlog で上映した5秒「蕾のそばで」"), vlog_seed
+        assert "見どころ：最後の" in vlog_seed["about"], vlog_seed
+        vlog_seed2 = cycle.share_to_seed({
+            "id": "vlog-10", "member": "ルナ", "topic": "朝の光",
+            "text": "窓辺で静かに待っている。顔のずれなし。"})
+        assert "窓辺で静かに待っている" in vlog_seed2["about"], vlog_seed2
+        plain_seed = cycle.share_to_seed({
+            "member": "るる", "topic": "写真", "text": "昨日の写真だよ。見て。"})
+        assert plain_seed["about"] == "昨日の写真だよ", plain_seed
+        url_seed = cycle.share_to_seed({
+            "member": "るる", "topic": "リンク", "text": "",
+            "url": "https://example.com/x"})
+        assert "about" not in url_seed, url_seed
     print("ALL CHECKS PASSED")
 
 

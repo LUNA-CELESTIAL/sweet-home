@@ -55,6 +55,41 @@ def main():
     assert transcript[0]["text"] in llm.prompts[1], "second speaker must see the first line"
     assert "Pingツールの続き話をした" in pool_line
 
+    # Baton conditions (2026-11-25): prompts carry the answer-first
+    # wording, the one-phrase pressure is gone, and passing by name
+    # is allowed.
+    assert "受けて返して" in llm.prompts[1], llm.prompts[1]
+    assert "名前を呼んで問いかけて" in llm.prompts[1]
+    assert "2〜3文でも" in llm.prompts[1]
+    assert all("一言足して" not in p for p in llm.prompts), "old one-phrase pressure remains"
+
+    # A line that calls a member by name with a question rewrites
+    # the next turn: the called member answers, and their prompt
+    # says the question was for them.
+    llm3 = FakeLLM({
+        "luna": ["「ステラ、昨日のPingの話、もう一度聞かせて？」"],
+        "stella": ["「いいわよ。静かな回線で、必要なものだけ残すの。」",
+                   "「決まりね、その選び方でいきましょう。」"],
+        "spica": ["「私は測る係をするよ。」"],
+    })
+    transcript3, _ = run_session(SEED, ["luna", "spica", "stella"], llm3)
+    members3 = [t["member"] for t in transcript3]
+    assert members3 == ["luna", "stella", "stella"], members3
+    assert "あなたへの問いかけです" in llm3.prompts[1], llm3.prompts[1]
+
+    # Cluster shapes by role (day.py): exchange / join / widen,
+    # with the seed's source member in the originator's chair.
+    import datetime as _dt
+    from day import cluster_order_for
+    d = _dt.date(2026, 11, 26)
+    o0 = cluster_order_for(SEED, d, 0)
+    o1 = cluster_order_for(SEED, d, 1)
+    o2 = cluster_order_for(SEED, d, 2)
+    assert len(o0) == 4 and o0[1] == "stella" and o0[3] == "stella", o0
+    assert o0[0] == o0[2] and o0[0] != "stella", o0  # exchange: two members
+    assert len(o1) == 4 and o1[1] == "stella" and o1[2] not in (o1[0], "stella"), o1
+    assert len(o2) == 5 and o2[-1] == "stella" and len(set(o2)) == 4, o2
+
     # Broken-line guard (live failure 2026-11-24, Stella's '...'):
     # a symbol-only reply is regenerated once; if it stays broken,
     # the turn is dropped and never reaches on_line.

@@ -17,6 +17,17 @@ owner or the bot account (Luna's relay), shaped like:
 The result — the video, the prompt used, and a 1fps frame sheet —
 is posted back to the work channel. It never enters the living
 room or the diary cycle.
+
+A second request kind renders a still image instead — the pixel
+i2i spec v1 (see pixel.py), written by the same hand:
+
+    画像実験：<what to check>
+    対象：<member id or name>
+    denoise：<0.45 etc.>        (optional)
+    追加タグ：<extra tags>       (optional)
+
+The member's anchor (deformer_<id>.png) and identity tags come
+from pixel.py; the result PNG is posted back the same way.
 """
 
 import json
@@ -58,6 +69,45 @@ def parse_request(content: str) -> dict | None:
     if not prompt:
         return None
     return {"note": note, "image": image, "duration": duration, "prompt": prompt}
+
+
+def parse_pixel_request(content: str) -> dict | None:
+    text = content.strip()
+    if not text.startswith("画像実験"):
+        return None
+    lines = text.splitlines()
+    note = lines[0].split("：", 1)[-1].split(":", 1)[-1].strip() if lines else ""
+    member = ""
+    denoise = None
+    extra = ""
+    for ln in lines[1:]:
+        s = ln.strip()
+        if s.startswith("対象"):
+            member = s.split("：", 1)[-1].split(":", 1)[-1].strip()
+            continue
+        if s.lower().startswith("denoise") or s.startswith("デノイズ"):
+            m = re.search(r"(\d+(?:\.\d+)?)", s)
+            if m:
+                denoise = float(m.group(1))
+            continue
+        if s.startswith("追加タグ"):
+            extra = s.split("：", 1)[-1].split(":", 1)[-1].strip()
+            continue
+    if not member:
+        return None
+    # Accept the member's Japanese name as well as the id.
+    try:
+        from personas import PERSONAS
+        for m in PERSONAS:
+            if member in (m["id"], m["name"]):
+                member = m["id"]
+                break
+    except Exception:
+        pass
+    req = {"kind": "pixel", "note": note, "member": member, "extra": extra}
+    if denoise is not None:
+        req["denoise"] = denoise
+    return req
 
 
 class ExperimentWatcher:
@@ -118,7 +168,8 @@ class ExperimentWatcher:
             author = str((msg.get("author") or {}).get("id"))
             if author not in self.allowed:
                 continue
-            req = parse_request(msg.get("content", ""))
+            req = parse_request(msg.get("content", "")) or \
+                parse_pixel_request(msg.get("content", ""))
             if req is None:
                 continue
             req["id"] = msg["id"]
@@ -126,8 +177,13 @@ class ExperimentWatcher:
             req_dir.mkdir(parents=True, exist_ok=True)
             (req_dir / f"{msg['id']}.json").write_text(
                 json.dumps(req, ensure_ascii=False, indent=1), encoding="utf-8")
-            print(f"experiment: request received '{req['note']}' "
-                  f"(image={req['image']}, {req['duration']}s)", flush=True)
+            if req.get("kind") == "pixel":
+                print(f"experiment: pixel request received '{req['note']}' "
+                      f"(member={req['member']}, "
+                      f"denoise={req.get('denoise', 'default')})", flush=True)
+            else:
+                print(f"experiment: request received '{req['note']}' "
+                      f"(image={req['image']}, {req['duration']}s)", flush=True)
             found = req
         if messages:
             self._save_state()
@@ -171,6 +227,8 @@ def run_pending(out_dir: Path, video, poster) -> bool:
         return False
     req_path = pending[0]
     req = json.loads(req_path.read_text(encoding="utf-8"))
+    if req.get("kind") == "pixel":
+        return _run_pixel(req_path, req, out_dir, video, poster)
     print(f"experiment: starting '{req['note']}'", flush=True)
     out_video = out_dir / "experiments" / f"{req_path.stem}.mp4"
     try:
@@ -192,5 +250,35 @@ def run_pending(out_dir: Path, video, poster) -> bool:
         print(f"experiment: FAILED '{req['note']}': {e}", flush=True)
         poster.post("work", "実験",
                     f"実験が失敗したよ: {e}\n使おうとしたプロンプト:\n{req['prompt']}")
+    (req_path.parent / f"{req_path.stem}.done").touch()
+    return True
+
+
+def _run_pixel(req_path: Path, req: dict, out_dir: Path, video, poster) -> bool:
+    """One pixel i2i render (spec v1). The tags and workflow come
+    from pixel.py; a member with no tag block, or an anchor missing
+    on the machine, fails here and is reported — never retried."""
+    import pixel
+    print(f"experiment: starting pixel '{req['note']}'", flush=True)
+    out_png = out_dir / "experiments" / f"{req_path.stem}-pixel.png"
+    prompt = ""
+    try:
+        member = req["member"]
+        prompt = pixel.prompt_for(member, req.get("extra", ""))
+        denoise = float(req.get("denoise", pixel.DEFAULT_DENOISE))
+        workflow = pixel.build_workflow(
+            f"deformer_{member}.png", prompt, denoise)
+        video.generate_image(workflow, out_png)
+        poster.post(
+            "work", "実験",
+            f"画像実験の結果だよ。\n確認したいこと: {req['note']}\n"
+            f"対象: {member} / denoise: {denoise}\n"
+            f"使ったタグ:\n{prompt}",
+            file_path=out_png)
+        print(f"experiment: pixel done '{req['note']}'", flush=True)
+    except Exception as e:
+        print(f"experiment: pixel FAILED '{req['note']}': {e}", flush=True)
+        poster.post("work", "実験",
+                    f"画像実験が失敗したよ: {e}\n使おうとしたタグ:\n{prompt}")
     (req_path.parent / f"{req_path.stem}.done").touch()
     return True

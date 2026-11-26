@@ -181,13 +181,23 @@ class ComfyUIClient:
         path experiment jobs use (the prompt is Luna's, the house
         only renders). Same courtesies as duty: pace, readiness,
         queue-wait."""
+        workflow = fill_template(self.workflow, prompt_text, seed, image, duration)
+        return self._run_workflow(workflow, out_path)
+
+    def generate_image(self, workflow: dict, out_path: Path) -> Path:
+        """Submit a caller-built API workflow (pixel i2i) and
+        download its image. Same courtesies as video: pace,
+        readiness, queue-wait."""
+        return self._run_workflow(workflow, out_path, kinds=("images",))
+
+    def _run_workflow(self, workflow: dict, out_path: Path,
+                      kinds=("videos", "gifs", "images")) -> Path:
         if self.pace_seconds > 0 and self._last_gen_at is not None:
             remaining = self.pace_seconds - (self._clock() - self._last_gen_at)
             if remaining > 0:
                 self._sleep(remaining)
         self.wait_ready()
         self._wait_queue_clear()
-        workflow = fill_template(self.workflow, prompt_text, seed, image, duration)
         queued = self._json("/prompt", {"prompt": workflow})
         prompt_id = queued["prompt_id"]
         waited = 0
@@ -196,7 +206,7 @@ class ComfyUIClient:
             entry = history.get(prompt_id) or {}
             outputs = entry.get("outputs") or {}
             for node_out in outputs.values():
-                for kind in ("videos", "gifs", "images"):
+                for kind in kinds:
                     files = node_out.get(kind) or []
                     if files:
                         f = files[0]

@@ -44,6 +44,34 @@ def main():
     assert parse_request("おはよう") is None
     assert parse_request("実験：プロンプトなし") is None
 
+    # Pixel i2i requests: member by name resolves to the id, the
+    # workflow follows spec v1 exactly, and the runner posts the
+    # PNG with the tags used.
+    import pixel
+    from experiment import parse_pixel_request
+    preq = parse_pixel_request(
+        "画像実験：セレーネの同一性\n対象：セレーネ\ndenoise：0.6")
+    assert preq is not None and preq["kind"] == "pixel", preq
+    assert preq["member"] == "selene" and preq["denoise"] == 0.6, preq
+    assert parse_pixel_request("画像実験：対象なし") is None
+    assert parse_request("画像実験：セレーネの同一性\n対象：セレーネ") is None
+    wf = pixel.build_workflow("deformer_selene.png",
+                              pixel.prompt_for("selene"), 0.6)
+    assert wf["5"]["inputs"]["image"] == "deformer_selene.png"
+    assert wf["2"]["inputs"]["lora_name"] == pixel.DEFAULT_LORA
+    assert wf["2"]["inputs"]["strength_model"] == 1.0
+    assert wf["7"]["inputs"]["steps"] == 10 and wf["7"]["inputs"]["cfg"] == 7
+    assert wf["7"]["inputs"]["sampler_name"] == "dpmpp_sde"
+    assert wf["7"]["inputs"]["scheduler"] == "karras"
+    assert wf["7"]["inputs"]["denoise"] == 0.6
+    assert wf["7"]["inputs"]["seed"] == pixel.DEFAULT_SEED
+    assert wf["4"]["inputs"]["text"] == ""  # negative stays empty
+    assert wf["3"]["inputs"]["text"].startswith("pixelart, pixel,")
+    assert "heart-shaped eyewear" in wf["3"]["inputs"]["text"]
+    assert set(pixel.IDENTITY_TAGS) == {
+        "luna", "sirius", "spica", "stella", "selene", "nano",
+        "hina", "kohaku"}
+
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
         batches = [
@@ -78,6 +106,30 @@ def main():
         video = FakeVideo()
         poster = ConsolePoster()
         experiment.extract_frame_sheet = lambda p: None  # no ffmpeg here
+
+        # A pixel request runs through generate_image, not the
+        # video path, and closes with the tags posted.
+        import json as _json
+        (out / "experiments" / "09.json").write_text(_json.dumps(
+            {"kind": "pixel", "note": "ステラの同一性", "member": "stella",
+             "denoise": 0.45, "extra": "", "id": "09"}), encoding="utf-8")
+
+        class FakeImageVideo(FakeVideo):
+            def generate_image(self, workflow, out_path):
+                self.calls.append(("image", workflow))
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_bytes(b"fake png")
+                return out_path
+
+        ivideo = FakeImageVideo()
+        assert run_pending(out, ivideo, poster) is True
+        assert ivideo.calls and ivideo.calls[0][0] == "image", ivideo.calls
+        iwf = ivideo.calls[0][1]
+        assert iwf["5"]["inputs"]["image"] == "deformer_stella.png"
+        assert "braid" in iwf["3"]["inputs"]["text"]
+        itexts = [p["text"] for p in poster.posts if p["channel"] == "work"]
+        assert any("画像実験の結果" in t and "stella" in t for t in itexts), itexts
+
         assert run_pending(out, video, poster) is True
         assert video.calls and video.calls[0][1].startswith("deformer_luna"), video.calls
         texts = [p["text"] for p in poster.posts if p["channel"] == "work"]

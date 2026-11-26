@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from diary import build_diary  # noqa: E402
 from duty import compose, duty_member  # noqa: E402
+from llm import clean_response  # noqa: E402
 
 EVENTS = [
     {"minutes": 10 * 60 + 10, "member": "セレーネ", "topic": "AIの仲間認識と情報漏洩"},
@@ -50,6 +51,30 @@ def main():
     seed = data["seed"]
     assert seed["sourceMember"] == "ステラ" and seed["topic"] == "Pingツール"
     assert "昨日" not in seed["note"], "seed fragment must not carry time words"
+
+    # A day with no recorded events: the closing is code's plain
+    # factual line, never a generation — asked to write from
+    # scenes and words that do not exist, the model invents both.
+    from diary import writer_for
+    from generate import diary_prose
+    from llm import FakeLLM
+    empty_structure, _ = build_diary(date, [])
+    writer = writer_for(date)
+    fake = FakeLLM({writer["id"]: [
+        "TITLE: 静かな日\nEXCERPT: 記録のない一日。",
+        "PREMISE: 昨日の話の続き。\nPROGRESS: 今日は進みなし。\nQUESTION: 明日はどうか。",
+    ]})
+    _, md_empty = diary_prose(fake, writer, date, [], empty_structure)
+    assert "記録された出来事はなかった" in md_empty, md_empty
+    assert fake.script[writer["id"]] == [], "closing must not be generated"
+
+    # Reasoning must never reach prose (2026-11-26 diary leak):
+    # paired think blocks are removed, and reasoning that runs to
+    # a lone </think> is cut with everything before it.
+    assert clean_response("<think>考え中</think>本文だけ") == "本文だけ"
+    leaked = "We need respond in Japanese...\n</think>\n\n朝、窓を開けたら。"
+    assert clean_response(leaked) == "朝、窓を開けたら。", clean_response(leaked)
+    assert clean_response("普通の文") == "普通の文"
 
     nxt = datetime.date(2026, 11, 23)
     member = duty_member(nxt, "morning")

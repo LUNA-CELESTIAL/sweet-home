@@ -142,13 +142,22 @@ def diary_prose(llm, writer: dict, date: datetime.date, events: list[dict],
     # as the sections, and the closing is asked to stay with the
     # day's scenes rather than sum the day up.
     materials = "\n".join(_events_lines(events))
-    closing_prompt = (
-        _persona_block(writer)
-        + "\n\n今日の日記の締めを、書き手の一人称で2〜3文書いてください。"
-        + "\n材料 (今日の出来事):\n" + materials
-        + "\n結論や教訓にまとめないでください。今日の場面と、誰かの言葉から書いてください。"
-        + "見出しは書かず、本文だけを出してください。")
-    closing = llm.generate(closing_prompt, writer["id"]).strip()
+    if events:
+        closing_prompt = (
+            _persona_block(writer)
+            + "\n\n今日の日記の締めを、書き手の一人称で2〜3文書いてください。"
+            + "\n材料 (今日の出来事):\n" + materials
+            + "\n結論や教訓にまとめないでください。今日の場面と、誰かの言葉から書いてください。"
+            + "見出しは書かず、本文だけを出してください。")
+        closing = llm.generate(closing_prompt, writer["id"]).strip()
+    else:
+        # A day with nothing recorded (the house was down): the
+        # closing is a plain factual line from code, not a
+        # generation. Asked to write "from a scene and someone's
+        # words" with no material, the model invents both —
+        # 2026-11-26's closing described a kitchen window and a
+        # voice that never happened.
+        closing = "今日は、家の中で記録された出来事はなかった。静かな一日だった。"
     sections_md.append(f"## 今日わかったこと\n{closing}")
 
     meta_prompt = (

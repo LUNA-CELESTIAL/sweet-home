@@ -9,7 +9,22 @@ once.
 """
 
 import json
+import re
 import urllib.request
+
+
+def clean_response(text: str) -> str:
+    """Remove a thinking model's reasoning from a response before
+    anyone downstream treats it as prose. Two shapes occur: paired
+    <think>...</think> blocks, and — the 2026-11-26 diary leak —
+    reasoning that runs from the start of the response to a lone
+    </think>, the opening tag never arriving. Line-shaped outputs
+    (duty, living) were already immune via extract_line; prose
+    outputs (diary sections, closings, impressions) were not."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    if "</think>" in text:
+        text = text.split("</think>", 1)[1]
+    return text.strip()
 
 
 class FakeLLM:
@@ -38,7 +53,7 @@ class OllamaClient:
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=300) as res:
-            return json.loads(res.read())["response"].strip()
+            return clean_response(json.loads(res.read())["response"])
 
     def release(self) -> None:
         """Unload the model from VRAM (keep_alive: 0), the way

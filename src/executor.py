@@ -29,7 +29,8 @@ class Executor:
     def __init__(self, now_minutes: Callable[[], float], sleep_minutes: Callable[[float], None],
                  temp_c: Callable[[], float], temp_limit_c: float,
                  heavy_cooldown_minutes: float = 0,
-                 idle_tick_minutes: float = 5, idle_margin_minutes: float = 15):
+                 idle_tick_minutes: float = 5, idle_margin_minutes: float = 15,
+                 grace_minutes: float = 30):
         self.now = now_minutes
         self.sleep = sleep_minutes
         self.temp_c = temp_c
@@ -49,6 +50,16 @@ class Executor:
         # on a normal day (jobs sit hours apart); it only bites when
         # jobs would otherwise run back to back, e.g. after a restart.
         self.heavy_cooldown_minutes = heavy_cooldown_minutes
+        # Jobs belong to their time slot (Ruru, 2026-11-26). A job
+        # whose moment has passed by more than the grace is let go,
+        # never caught up: after a restart the day continues from
+        # the next slot instead of re-living the missed ones in a
+        # burst — and a job that was started is recorded as started
+        # (see on_start), so a restart mid-job does not re-run it
+        # from the top either. Tonight's lesson: the 17:30 living
+        # cluster re-ran on every restart, each run holding the
+        # executor for ~20 minutes and starving everything else.
+        self.grace_minutes = grace_minutes
         self.log: list[dict] = []
 
     def _wait_until(self, at: float, idle: Callable[[], bool] | None) -> None:
@@ -76,19 +87,32 @@ class Executor:
 
     def run(self, jobs: list[TimedJob], skip: set[str] | None = None,
             on_done: Callable[[str], None] | None = None,
+            on_start: Callable[[str], None] | None = None,
             paused: Callable[[], bool] | None = None,
             idle: Callable[[], bool] | None = None) -> list[dict]:
         skip = skip or set()
         for job in sorted(jobs, key=lambda j: j.at):
             if job.name in skip:
-                # Already completed before a restart: a lived day is
-                # not re-lived. (The video seed is per-date, so a
-                # re-run would even produce the identical video.)
+                # Already done — or already started — before a
+                # restart: a lived day is not re-lived. (The video
+                # seed is per-date, so a re-run would even produce
+                # the identical video.)
                 self.log.append({"name": job.name, "action": "skipped (done)",
                                  "at": self.now()})
-                print(f"job '{job.name}': skipped (already done)", flush=True)
+                print(f"job '{job.name}': skipped (already done or started)",
+                      flush=True)
                 continue
             self._wait_until(job.at, idle)
+            if self.now() - job.at > self.grace_minutes:
+                # Past its slot: let it go (and mark it done, so
+                # nothing reconsiders it). Time manages the day;
+                # a missed slot is a missed slot, honestly logged.
+                self.log.append({"name": job.name, "action": "let go (past its time)",
+                                 "at": self.now()})
+                print(f"job '{job.name}': let go (past its time)", flush=True)
+                if on_done is not None:
+                    on_done(job.name)
+                continue
             if paused is not None and paused():
                 # Experiment mode, checked at the job's own moment:
                 # the machine belongs to Ruru's own work right now.
@@ -106,6 +130,11 @@ class Executor:
                 print(f"job '{job.name}': dropped (thermal guard)", flush=True)
                 continue
             print(f"job '{job.name}': starting", flush=True)
+            if on_start is not None:
+                # Recorded BEFORE the work: if the house dies or is
+                # restarted mid-job, the next boot skips this job
+                # instead of re-running it from the top.
+                on_start(job.name)
             job.fn()
             self.log.append({"name": job.name, "action": "run", "at": self.now()})
             print(f"job '{job.name}': done", flush=True)

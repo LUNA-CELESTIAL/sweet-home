@@ -115,6 +115,46 @@ def main():
     ex6.run([TimedJob(60, "living 1", lambda: ran6.append("living"))],
             paused=lambda: clock6.minutes < 30)
     assert ran6 == ["living"], ran6
+
+    # Time-managed restarts (2026-11-26): a job is recorded as
+    # started BEFORE it runs, so a house that dies mid-job never
+    # re-runs it from the top on the next boot.
+    clock7 = FakeClock()
+    ran7: list[str] = []
+    started7: list[str] = []
+    ex7 = Executor(clock7.now, clock7.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    ex7.run([TimedJob(0, "living 3", lambda: ran7.append("living"))],
+            on_start=started7.append)
+    assert ran7 == ["living"] and started7 == ["living 3"], (ran7, started7)
+    ran7b: list[str] = []
+    ex7b = Executor(clock7.now, clock7.sleep, temp_c=lambda: 50.0, temp_limit_c=85)
+    ex7b.run([TimedJob(0, "living 3", lambda: ran7b.append("living"))],
+             skip=set(started7))
+    assert ran7b == [], ran7b
+
+    # A job far past its slot at boot is let go, not caught up —
+    # and marked done so nothing reconsiders it.
+    clock8 = FakeClock()
+    clock8.minutes = 12 * 60
+    ran8: list[str] = []
+    done8: list[str] = []
+    ex8 = Executor(clock8.now, clock8.sleep, temp_c=lambda: 50.0, temp_limit_c=85,
+                   grace_minutes=30)
+    log8 = ex8.run([TimedJob(10 * 60 + 30, "living 1", lambda: ran8.append("x"))],
+                   on_done=done8.append)
+    assert ran8 == [] and done8 == ["living 1"], (ran8, done8)
+    assert log8[0]["action"] == "let go (past its time)", log8
+
+    # Within the grace, a slightly late job still runs (a house
+    # that boots at 20:05 still does the 20:00 duty).
+    clock9 = FakeClock()
+    clock9.minutes = 20 * 60 + 5
+    ran9: list[str] = []
+    ex9 = Executor(clock9.now, clock9.sleep, temp_c=lambda: 50.0, temp_limit_c=85,
+                   grace_minutes=30)
+    ex9.run([TimedJob(20 * 60, "evening duty", lambda: ran9.append("duty"),
+                      heavy=True, protected=True)])
+    assert ran9 == ["duty"], ran9
     print("ALL CHECKS PASSED")
 
 

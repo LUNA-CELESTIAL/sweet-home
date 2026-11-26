@@ -228,17 +228,31 @@ def main():
             today = datetime.datetime.now(TZ).date()
             state_path = ROOT / "out" / f"state-{today.isoformat()}.json"
             done: set[str] = set()
+            started: set[str] = set()
             if state_path.exists():
                 try:
-                    done = set(_json.loads(state_path.read_text(encoding="utf-8"))["done"])
+                    _state = _json.loads(state_path.read_text(encoding="utf-8"))
+                    done = set(_state.get("done", []))
+                    started = set(_state.get("started", []))
                 except Exception:
-                    done = set()
+                    done, started = set(), set()
 
-            def mark_done(name: str, _done=done, _path=state_path):
-                _done.add(name)
+            def _save_state(_done=done, _started=started, _path=state_path):
                 _path.parent.mkdir(parents=True, exist_ok=True)
-                _path.write_text(_json.dumps({"done": sorted(_done)},
-                                             ensure_ascii=False), encoding="utf-8")
+                _path.write_text(_json.dumps(
+                    {"done": sorted(_done), "started": sorted(_started)},
+                    ensure_ascii=False), encoding="utf-8")
+
+            def mark_done(name: str, _done=done):
+                _done.add(name)
+                _save_state()
+
+            def mark_started(name: str, _started=started):
+                # A started job is never re-run today, even if the
+                # house died mid-job — time, not completion, is
+                # what a restart respects (2026-11-26).
+                _started.add(name)
+                _save_state()
 
             import cycle as _cycle
             seed = _cycle.load_seed(ROOT / "out") or DEMO_SEED
@@ -265,7 +279,9 @@ def main():
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")),
                                 heavy_cooldown_minutes=float(
-                                    cfg.get("VIDEO_COOLDOWN_MINUTES", "10")))
+                                    cfg.get("VIDEO_COOLDOWN_MINUTES", "10")),
+                                grace_minutes=float(
+                                    cfg.get("JOB_GRACE_MINUTES", "30")))
 
             idle_state = {"last": None}
 
@@ -317,7 +333,8 @@ def main():
 
             print_queue_inventory(ROOT / "out")
             executor.run(day_jobs(day, site_export_path=ROOT / "export" / "diary.json"),
-                         skip=done, on_done=mark_done,
+                         skip=done | started, on_done=mark_done,
+                         on_start=mark_started,
                          paused=lambda: (ROOT / "out" / "PAUSE").exists(),
                          idle=idle_free_time)
             print(f"day complete ({today})")

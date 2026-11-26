@@ -154,9 +154,13 @@ def day_jobs(day, site_export_path=None) -> list[TimedJob]:
     (heavy + protected); vlog jobs join here once vlog exists."""
     return [
         TimedJob(9 * 60 + 30, "morning duty", day.morning, heavy=True, protected=True),
+        # The living room is a morning-to-midday thing (Ruru,
+        # 2026-11-26): three clusters by 14:30, and the evening
+        # belongs to other work — experiments, vlog screenings —
+        # in the free time before the evening duty.
         TimedJob(10 * 60 + 30, "living 1", lambda: day.living()),
-        TimedJob(14 * 60 + 30, "living 2", lambda: day.living()),
-        TimedJob(17 * 60 + 30, "living 3", lambda: day.living()),
+        TimedJob(12 * 60 + 30, "living 2", lambda: day.living()),
+        TimedJob(14 * 60 + 30, "living 3", lambda: day.living()),
         TimedJob(20 * 60, "evening duty", day.evening, heavy=True, protected=True),
         TimedJob(21 * 60 + 30, "diary", lambda: day.diary(site_export_path)),
     ]

@@ -19,7 +19,7 @@ from export_site import build_entry, merge
 from generate import diary_prose, duty_text
 from session import run_session
 
-LIVING_TIMES = [10 * 60 + 30, 14 * 60 + 30, 17 * 60 + 30]
+LIVING_TIMES = [10 * 60 + 30, 12 * 60 + 30, 14 * 60 + 30]
 
 
 def cluster_order_for(seed: dict, date: datetime.date, cluster_idx: int) -> list[str]:

@@ -205,6 +205,8 @@ def main():
         pace = int(cfg.get("VIDEO_MIN_INTERVAL_MINUTES", "30")) * 60
         if video is not None:
             video.pace_seconds = pace
+            video.image_pace_seconds = \
+                int(cfg.get("IMAGE_MIN_INTERVAL_MINUTES", "5")) * 60
 
         def now_minutes() -> float:
             n = datetime.datetime.now(TZ)

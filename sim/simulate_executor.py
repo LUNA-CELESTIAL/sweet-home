@@ -65,6 +65,22 @@ def main():
         except Exception:
             pass  # the stub server is not there; only the pacing sleep matters
         assert t["slept"] and abs(t["slept"][0] - 1700) < 1, t["slept"]
+        # Image pace: stills use their own shorter interval — after
+        # the same generation, an image waits out only 300s, not the
+        # video's 1800s (2026-11-27).
+        t2 = {"now": 1000.0, "slept": []}
+        client2 = ComfyUIClient("http://stub", str(wf), pace_seconds=1800,
+                                image_pace_seconds=300,
+                                clock=lambda: t2["now"],
+                                sleep=lambda s: (t2["slept"].append(s), t2.__setitem__("now", t2["now"] + s)))
+        client2.wait_ready = lambda **kw: None
+        client2._last_gen_at = 1000.0
+        t2["now"] = 1100.0
+        try:
+            client2.generate_image({"1": {"inputs": {}}}, Path(td) / "y.png")
+        except Exception:
+            pass  # stub server; only the pacing sleep matters
+        assert t2["slept"] and abs(t2["slept"][0] - 200) < 1, t2["slept"]
     # Restart: jobs already done are skipped, completions are reported.
     clock2 = FakeClock()
     clock2.minutes = 6 * 60

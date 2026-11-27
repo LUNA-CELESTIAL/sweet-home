@@ -104,6 +104,7 @@ def build_video_prompt(member: dict, slot: str, speech: str | None = None,
 class ComfyUIClient:
     def __init__(self, base_url: str, workflow_path: str, poll_seconds: int = 10,
                  timeout_seconds: int = 1800, pace_seconds: int = 0,
+                 image_pace_seconds: int | None = None,
                  clock=time.monotonic, sleep=time.sleep):
         if not workflow_path or workflow_path.startswith("（"):
             raise ValueError("COMFYUI_WORKFLOW_PATH is unset or still a placeholder")
@@ -114,7 +115,13 @@ class ComfyUIClient:
         # Execution-level spacing: however the jobs were planned, two
         # video generations never fire back to back — generate() waits
         # out the remainder of the interval. 0 disables (verification).
+        # Still images are far lighter than a video render, so they
+        # keep their own, shorter interval (2026-11-27: the video
+        # interval was silently taxing every pixel experiment by up
+        # to 30 minutes). None means "same as video".
         self.pace_seconds = pace_seconds
+        self.image_pace_seconds = pace_seconds \
+            if image_pace_seconds is None else image_pace_seconds
         self._clock = clock
         self._sleep = sleep
         self._last_gen_at: float | None = None
@@ -186,14 +193,17 @@ class ComfyUIClient:
 
     def generate_image(self, workflow: dict, out_path: Path) -> Path:
         """Submit a caller-built API workflow (pixel i2i) and
-        download its image. Same courtesies as video: pace,
-        readiness, queue-wait."""
-        return self._run_workflow(workflow, out_path, kinds=("images",))
+        download its image. Same courtesies as video — readiness,
+        queue-wait — but paced by the shorter image interval."""
+        return self._run_workflow(workflow, out_path, kinds=("images",),
+                                  pace_seconds=self.image_pace_seconds)
 
     def _run_workflow(self, workflow: dict, out_path: Path,
-                      kinds=("videos", "gifs", "images")) -> Path:
-        if self.pace_seconds > 0 and self._last_gen_at is not None:
-            remaining = self.pace_seconds - (self._clock() - self._last_gen_at)
+                      kinds=("videos", "gifs", "images"),
+                      pace_seconds: float | None = None) -> Path:
+        pace = self.pace_seconds if pace_seconds is None else pace_seconds
+        if pace > 0 and self._last_gen_at is not None:
+            remaining = pace - (self._clock() - self._last_gen_at)
             if remaining > 0:
                 self._sleep(remaining)
         self.wait_ready()

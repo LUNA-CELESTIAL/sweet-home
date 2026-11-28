@@ -72,6 +72,36 @@ def main():
         "luna", "sirius", "spica", "stella", "selene", "nano",
         "hina", "kohaku"}
 
+    # Costume lane: multi-line costume text is flattened in, the
+    # workflow has no LoRA and no pixel trigger, steps are at
+    # illustration level, and the identity block carries no outfit.
+    import costume
+    from experiment import parse_costume_request
+    creq = parse_costume_request(
+        "衣装実験：No.16パイロット\n対象：ルナ\ndenoise：0.75\n衣装：\n"
+        "fitted icy-blue dress,\ntranslucent trapezoid skirt panels")
+    assert creq is not None and creq["kind"] == "costume", creq
+    assert creq["member"] == "luna" and creq["denoise"] == 0.75, creq
+    assert creq["costume"] == ("fitted icy-blue dress, "
+                               "translucent trapezoid skirt panels"), creq
+    assert parse_costume_request("衣装実験：衣装なし") is None
+    assert parse_pixel_request("衣装実験：x\n衣装：y") is None
+    assert parse_request("衣装実験：x\n衣装：y") is None
+    cwf = costume.build_workflow(
+        "deformer_luna.png",
+        costume.prompt_for("luna", creq["costume"]), 0.75)
+    assert all(n["class_type"] != "LoraLoader" for n in cwf.values())
+    assert cwf["4"]["inputs"]["image"] == "deformer_luna.png"
+    assert cwf["6"]["inputs"]["steps"] == 25 and cwf["6"]["inputs"]["cfg"] == 6
+    assert cwf["6"]["inputs"]["denoise"] == 0.75
+    assert cwf["6"]["inputs"]["seed"] == costume.DEFAULT_SEED
+    assert cwf["3"]["inputs"]["text"] == ""  # negative stays empty
+    ctext = cwf["2"]["inputs"]["text"]
+    assert ctext.startswith("1girl, solo, long hair, light blue hair"), ctext
+    assert "pixelart" not in ctext and "sailor" not in ctext, ctext
+    assert "translucent trapezoid skirt panels" in ctext, ctext
+    assert set(costume.IDENTITY_TAGS) == {"luna"}
+
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
         batches = [
@@ -129,6 +159,23 @@ def main():
         assert "braid" in iwf["3"]["inputs"]["text"]
         itexts = [p["text"] for p in poster.posts if p["channel"] == "work"]
         assert any("画像実験の結果" in t and "stella" in t for t in itexts), itexts
+
+        # A costume request runs through generate_image too, on
+        # the costume workflow (no LoRA), and posts its result.
+        (out / "experiments" / "10.json").write_text(_json.dumps(
+            {"kind": "costume", "note": "No.16パイロット", "member": "luna",
+             "denoise": 0.75,
+             "costume": "fitted icy-blue dress, translucent skirt panels",
+             "id": "10"}), encoding="utf-8")
+        ivideo.calls.clear()
+        assert run_pending(out, ivideo, poster) is True
+        assert ivideo.calls and ivideo.calls[0][0] == "image", ivideo.calls
+        cwf2 = ivideo.calls[0][1]
+        assert cwf2["4"]["inputs"]["image"] == "deformer_luna.png"
+        assert all(n["class_type"] != "LoraLoader" for n in cwf2.values())
+        assert "translucent skirt panels" in cwf2["2"]["inputs"]["text"]
+        ctexts = [p["text"] for p in poster.posts if p["channel"] == "work"]
+        assert any("衣装実験の結果" in t and "luna" in t for t in ctexts), ctexts
 
         assert run_pending(out, video, poster) is True
         assert video.calls and video.calls[0][1].startswith("deformer_luna"), video.calls

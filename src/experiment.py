@@ -28,6 +28,20 @@ i2i spec v1 (see pixel.py), written by the same hand:
 
 The member's anchor (deformer_<id>.png) and identity tags come
 from pixel.py; the result PNG is posted back the same way.
+
+A third kind changes the outfit instead — the costume lane
+(see costume.py), full-body illustration i2i with no pixel
+trigger and no LoRA:
+
+    衣装実験：<what to check>
+    対象：<member id or name>     (defaults to Luna)
+    denoise：<0.75 etc.>          (optional)
+    衣装：
+    <the compressed costume prompt, may span lines>
+
+The member's identity tags (outfit excluded) come from
+costume.py; the costume text arrives with the request, written
+beforehand by the Luna doing the verification.
 """
 
 import json
@@ -110,6 +124,54 @@ def parse_pixel_request(content: str) -> dict | None:
     return req
 
 
+def parse_costume_request(content: str) -> dict | None:
+    text = content.strip()
+    if not text.startswith("衣装実験"):
+        return None
+    lines = text.splitlines()
+    note = lines[0].split("：", 1)[-1].split(":", 1)[-1].strip() if lines else ""
+    member = "luna"
+    denoise = None
+    costume_lines: list[str] = []
+    in_costume = False
+    for ln in lines[1:]:
+        s = ln.strip()
+        if s.startswith("対象"):
+            member = s.split("：", 1)[-1].split(":", 1)[-1].strip() or member
+            continue
+        if s.lower().startswith("denoise") or s.startswith("デノイズ"):
+            m = re.search(r"(\d+(?:\.\d+)?)", s)
+            if m:
+                denoise = float(m.group(1))
+            continue
+        if s.startswith("衣装"):
+            in_costume = True
+            rest = s.split("：", 1)[-1].split(":", 1)[-1].strip()
+            if rest and rest != s:
+                costume_lines.append(rest)
+            continue
+        if in_costume:
+            costume_lines.append(ln)
+    costume = ", ".join(
+        l.strip().rstrip(",") for l in costume_lines if l.strip())
+    if not costume:
+        return None
+    # Accept the member's Japanese name as well as the id.
+    try:
+        from personas import PERSONAS
+        for m in PERSONAS:
+            if member in (m["id"], m["name"]):
+                member = m["id"]
+                break
+    except Exception:
+        pass
+    req = {"kind": "costume", "note": note, "member": member,
+           "costume": costume}
+    if denoise is not None:
+        req["denoise"] = denoise
+    return req
+
+
 class ExperimentWatcher:
     """Polls the work channel for experiment requests, the same
     baseline way as the control watcher: history is never acted on,
@@ -169,7 +231,8 @@ class ExperimentWatcher:
             if author not in self.allowed:
                 continue
             req = parse_request(msg.get("content", "")) or \
-                parse_pixel_request(msg.get("content", ""))
+                parse_pixel_request(msg.get("content", "")) or \
+                parse_costume_request(msg.get("content", ""))
             if req is None:
                 continue
             req["id"] = msg["id"]
@@ -179,6 +242,10 @@ class ExperimentWatcher:
                 json.dumps(req, ensure_ascii=False, indent=1), encoding="utf-8")
             if req.get("kind") == "pixel":
                 print(f"experiment: pixel request received '{req['note']}' "
+                      f"(member={req['member']}, "
+                      f"denoise={req.get('denoise', 'default')})", flush=True)
+            elif req.get("kind") == "costume":
+                print(f"experiment: costume request received '{req['note']}' "
                       f"(member={req['member']}, "
                       f"denoise={req.get('denoise', 'default')})", flush=True)
             else:
@@ -229,6 +296,8 @@ def run_pending(out_dir: Path, video, poster) -> bool:
     req = json.loads(req_path.read_text(encoding="utf-8"))
     if req.get("kind") == "pixel":
         return _run_pixel(req_path, req, out_dir, video, poster)
+    if req.get("kind") == "costume":
+        return _run_costume(req_path, req, out_dir, video, poster)
     print(f"experiment: starting '{req['note']}'", flush=True)
     out_video = out_dir / "experiments" / f"{req_path.stem}.mp4"
     try:
@@ -280,5 +349,34 @@ def _run_pixel(req_path: Path, req: dict, out_dir: Path, video, poster) -> bool:
         print(f"experiment: pixel FAILED '{req['note']}': {e}", flush=True)
         poster.post("work", "実験",
                     f"画像実験が失敗したよ: {e}\n使おうとしたタグ:\n{prompt}")
+    (req_path.parent / f"{req_path.stem}.done").touch()
+    return True
+
+
+def _run_costume(req_path: Path, req: dict, out_dir: Path, video, poster) -> bool:
+    """One costume-lane render (see costume.py). Same shape as the
+    pixel runner: failure is reported and the request closes."""
+    import costume
+    print(f"experiment: starting costume '{req['note']}'", flush=True)
+    out_png = out_dir / "experiments" / f"{req_path.stem}-costume.png"
+    prompt = ""
+    try:
+        member = req["member"]
+        prompt = costume.prompt_for(member, req["costume"])
+        denoise = float(req.get("denoise", costume.DEFAULT_DENOISE))
+        workflow = costume.build_workflow(
+            f"deformer_{member}.png", prompt, denoise)
+        video.generate_image(workflow, out_png)
+        poster.post(
+            "work", "実験",
+            f"衣装実験の結果だよ。\n確認したいこと: {req['note']}\n"
+            f"対象: {member} / denoise: {denoise}\n"
+            f"使ったタグ:\n{prompt}",
+            file_path=out_png)
+        print(f"experiment: costume done '{req['note']}'", flush=True)
+    except Exception as e:
+        print(f"experiment: costume FAILED '{req['note']}': {e}", flush=True)
+        poster.post("work", "実験",
+                    f"衣装実験が失敗したよ: {e}\n使おうとしたタグ:\n{prompt}")
     (req_path.parent / f"{req_path.stem}.done").touch()
     return True

@@ -257,11 +257,18 @@ def main():
                 _save_state()
 
             import cycle as _cycle
-            seed = _cycle.load_seed(ROOT / "out") or DEMO_SEED
+            # No demo fallback in live mode: a day with no seed is
+            # a quiet day (shares / a related topic may still fill
+            # it), never a fictional one. The DEMO_SEED fixture's
+            # Ping topic used to fall back in whenever seed.json
+            # was absent, and the diary then handed it on — the
+            # same topic talked about every day (found 2026-11-28).
+            seed = _cycle.load_seed(ROOT / "out")
             archive = _cycle.load_archive(ROOT / "out")
             yesterday = (today - datetime.timedelta(days=1)).isoformat()
             related = _cycle.related_past_seed(
-                archive, seed["topic"], {yesterday, today.isoformat()})
+                archive, seed["topic"], {yesterday, today.isoformat()}) \
+                if seed else None
 
             def share_seed_loader(_today=today):
                 shares = [s for s in _cycle.load_shares(

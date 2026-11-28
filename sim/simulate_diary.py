@@ -52,6 +52,24 @@ def main():
     assert seed["sourceMember"] == "ステラ" and seed["topic"] == "Pingツール"
     assert "昨日" not in seed["note"], "seed fragment must not carry time words"
 
+    # The hand-on rule (2026-11-28): the topic today was handed is
+    # never handed on again — not even under a variant name — or
+    # the house talks about it every day forever. With only the
+    # consumed topic open, the diary leaves no seed; a different
+    # open topic still becomes the seed.
+    consumed, _ = build_diary(date, EVENTS, consumed_topic="Pingツール")
+    assert consumed["seed"] is None, consumed["seed"]
+    variant = EVENTS + [{"minutes": 17 * 60, "member": "スピカ",
+                         "topic": "Pingツールの続き", "open": True,
+                         "quote": "続きを測ってみようかな"}]
+    consumed_v, _ = build_diary(date, variant, consumed_topic="Pingツール")
+    assert consumed_v["seed"] is None, consumed_v["seed"]
+    mixed = variant + [{"minutes": 18 * 60, "member": "ルナ",
+                        "topic": "蕾の水やり", "open": True,
+                        "quote": "蕾が少し開いた気がする"}]
+    handed, _ = build_diary(date, mixed, consumed_topic="Pingツール")
+    assert handed["seed"]["topic"] == "蕾の水やり", handed["seed"]
+
     # A day with no recorded events: the closing is code's plain
     # factual line, never a generation — asked to write from
     # scenes and words that do not exist, the model invents both.

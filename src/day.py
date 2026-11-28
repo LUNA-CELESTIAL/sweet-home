@@ -145,9 +145,14 @@ class Day:
                     "topic": share_seed["topic"],
                     "quote": share_seed["quote"]})
         # The day's last cluster may return to a related past topic.
+        # "Related" must not mean "the same topic in other words":
+        # a past variant of today's own topic (a shared >=3-char
+        # run) is the same conversation, not a return visit.
         if (self._living_count == len(LIVING_TIMES) - 1
                 and self.related_seed and self._living_seed
-                and self.related_seed["topic"] != self._living_seed["topic"]):
+                and self.related_seed["topic"] != self._living_seed["topic"]
+                and cycle._shared_run(self.related_seed["topic"],
+                                      self._living_seed["topic"]) < 3):
             return self.related_seed
         return self._living_seed
 
@@ -200,7 +205,9 @@ class Day:
 
     def diary(self, site_export_path: Path | None = None):
         writer = writer_for(self.date)
-        structure, _ = build_diary(self.date, self.events)
+        structure, _ = build_diary(
+            self.date, self.events,
+            consumed_topic=(self.seed or {}).get("topic"))
         meta, md = diary_prose(self.llm, writer, self.date, self.events, structure,
                                yesterday_seed=self.seed)
         self._release()

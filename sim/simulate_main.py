@@ -67,10 +67,13 @@ def main():
         assert any("材料 (今日の出来事)" in p and "結論や教訓にまとめない" in p
                    for p in llm.prompts), "closing prompt lacks material"
         assert (out / "diary-2026-11-23.md").exists() and (out / "diary-site.json").exists()
-        # The diary's seed now comes from the day's own living room
-        # (the closing line, verbatim), not from the passed-in events.
-        assert result["seed"]["topic"] == "Pingツール", result["seed"]
-        assert result["seed"]["quote"] == "決まりね。", result["seed"]
+        # The hand-on rule (2026-11-28): the day was handed the
+        # Ping topic and spent its living room on it, so the diary
+        # hands nothing on. (It used to re-seed the living room's
+        # closing line verbatim — which is how this demo fixture's
+        # Ping topic came to be talked about every day in the live
+        # house.)
+        assert result["seed"] is None, result["seed"]
         assert voice.calls == [("kohaku", "2026-11-23-morning.wav"),
                                ("stella", "2026-11-23-evening.wav")], voice.calls
     print("ALL CHECKS PASSED")

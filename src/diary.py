@@ -36,8 +36,35 @@ def block_of(minutes: int) -> str:
     return "夜のこと"
 
 
-def build_diary(date: datetime.date, events: list[dict]) -> tuple[dict, str]:
-    """events: {minutes, member, topic, quote (optional), open (optional)}"""
+def _shared_run(a: str, b: str) -> int:
+    """Longest common substring length (chars)."""
+    best = 0
+    for i in range(len(a)):
+        for j in range(len(b)):
+            k = 0
+            while i + k < len(a) and j + k < len(b) and a[i + k] == b[j + k]:
+                k += 1
+            best = max(best, k)
+    return best
+
+
+def _same_topic(a: str, b: str) -> bool:
+    """Same conversation, allowing wording variants ("Pingツール"
+    vs "Pingツールの続き"): equal, or sharing a >=3-char run."""
+    return a == b or _shared_run(a, b) >= 3
+
+
+def build_diary(date: datetime.date, events: list[dict],
+                consumed_topic: str | None = None) -> tuple[dict, str]:
+    """events: {minutes, member, topic, quote (optional), open (optional)}
+
+    consumed_topic: the topic today itself was handed (yesterday's
+    seed). The diary never hands the same topic on again — a topic
+    the house spent a day on has had its day; tomorrow's talk comes
+    from a share, a related past topic, or a quiet day. (Without
+    this, the living room's open events re-seeded the same topic
+    every night and the house talked about it forever, 2026-11-28.)
+    """
     writer = writer_for(date)
     sections: dict[str, list[dict]] = {}
     for ev in events:
@@ -63,6 +90,9 @@ def build_diary(date: datetime.date, events: list[dict]) -> tuple[dict, str]:
 
     seed = None
     open_events = [e for e in events if e.get("open")]
+    if consumed_topic:
+        open_events = [e for e in open_events
+                       if not _same_topic(e.get("topic", ""), consumed_topic)]
     if open_events:
         last = open_events[-1]
         seed = {

@@ -61,10 +61,12 @@ def main():
         day1.living()
         day1.evening()
         day1.diary()
+        # The hand-on rule (2026-11-28): day 1 was handed 水やりの花
+        # and spent the day on it, so its diary hands nothing on.
+        # The diary used to re-seed the day's own living topic every
+        # night, and the house talked about it forever.
         seed1 = cycle.load_seed(out)
-        assert seed1 is not None, "diary left no seed for tomorrow"
-        assert seed1["topic"] == "水やりの花", seed1
-        assert seed1["quote"] in LINE, seed1  # verbatim living line
+        assert seed1 is None, seed1
         archive = cycle.load_archive(out)
         assert len(archive) == 1 and archive[0]["date"] == d1.isoformat()
 
@@ -121,8 +123,10 @@ def main():
         assert watcher_e.poll_once() == []
         assert len(watcher_e.poll_once()) == 1
 
-        # --- Day 2: starts from day 1's seed; the share takes the
-        # living room; the last cluster resurfaces a related past.
+        # --- Day 2: starts from a fresh seed again (one a later
+        # diary or a share left — never yesterday's echo); the share
+        # takes the living room; the last cluster resurfaces a
+        # related past topic.
         d2 = datetime.date(2026, 11, 26)
         cycle.append_archive(out, {
             "date": "2026-11-20", "writer": "luna", "writerName": "ルナ",
@@ -131,11 +135,11 @@ def main():
             "seed": {"topic": "水やりの花と蕾", "sourceMember": "ルナ",
                      "quote": "蕾が少し膨らんだ", "note": ""}})
         related = cycle.related_past_seed(
-            cycle.load_archive(out), seed1["topic"], {d1.isoformat(), d2.isoformat()})
+            cycle.load_archive(out), SEED0["topic"], {d1.isoformat(), d2.isoformat()})
         assert related is not None and related["topic"] == "水やりの花と蕾", related
 
         poster2 = ConsolePoster()
-        day2 = Day(FakeLLM(script()), poster2, d2, None, seed1, [], out,
+        day2 = Day(FakeLLM(script()), poster2, d2, None, SEED0, [], out,
                    share_seed_loader=lambda: cycle.share_to_seed(shares[-1]),
                    related_seed=related)
         day2.morning()

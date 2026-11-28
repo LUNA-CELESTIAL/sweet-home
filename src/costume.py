@@ -39,6 +39,19 @@ STEPS = 25
 CFG = 6
 
 
+def anchor_for(member_id: str) -> str:
+    """The full-body (non-deformed) anchor in ComfyUI input.
+
+    Separate from the deformer_<id>.png anchors on purpose: the
+    duty and pixel lanes are built on the chibi versions, while a
+    costume needs body area for its panels, sleeves and skirt to
+    land on — the chibi pilot (2026-11-28) showed the outfit
+    either not changing at all or breaking the face first. Ruru
+    provided the full-body versions of all six sisters; they live
+    in input as fullbody_<id>.png."""
+    return f"fullbody_{member_id}.png"
+
+
 def prompt_for(member_id: str, costume_text: str) -> str:
     base = IDENTITY_TAGS[member_id]
     costume = " ".join((costume_text or "").split())

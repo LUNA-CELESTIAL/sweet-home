@@ -171,7 +171,10 @@ def main():
         assert run_pending(out, ivideo, poster) is True
         assert ivideo.calls and ivideo.calls[0][0] == "image", ivideo.calls
         cwf2 = ivideo.calls[0][1]
-        assert cwf2["4"]["inputs"]["image"] == "deformer_luna.png"
+        # The costume lane anchors on the full-body version, not
+        # the chibi deformer anchor the duty/pixel lanes use.
+        assert costume.anchor_for("luna") == "fullbody_luna.png"
+        assert cwf2["4"]["inputs"]["image"] == "fullbody_luna.png"
         assert all(n["class_type"] != "LoraLoader" for n in cwf2.values())
         assert "translucent skirt panels" in cwf2["2"]["inputs"]["text"]
         ctexts = [p["text"] for p in poster.posts if p["channel"] == "work"]

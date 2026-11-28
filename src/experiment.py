@@ -365,7 +365,7 @@ def _run_costume(req_path: Path, req: dict, out_dir: Path, video, poster) -> boo
         prompt = costume.prompt_for(member, req["costume"])
         denoise = float(req.get("denoise", costume.DEFAULT_DENOISE))
         workflow = costume.build_workflow(
-            f"deformer_{member}.png", prompt, denoise)
+            costume.anchor_for(member), prompt, denoise)
         video.generate_image(workflow, out_png)
         poster.post(
             "work", "実験",

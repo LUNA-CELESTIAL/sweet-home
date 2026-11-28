@@ -7,7 +7,8 @@
 - Turn order is a rule-side pattern (exchange / join / widen, chosen
   by the caller), max 5 turns — with one living exception: a line
   that calls another member by name with a question passes the
-  baton, and that member takes the next turn.
+  baton into the next REPEAT slot. A fresh entrance is never
+  stolen by a call, or a duet eats the whole cluster.
 - The baton is carried in the prompt conditions, not in per-line
   rules: answer the previous speaker's content first, then add your
   own angle. Persona shows in how a member responds, not in a motif
@@ -68,7 +69,8 @@ def build_prompt(packet: str, transcript: list[dict], speaker: dict,
             "キーワードだけを拾って、自分の話で完結させないでください。"
             "そのうえで、あなたの関心の角度を足してください。"
             "受けて返す時は、2〜3文でも構いません。"
-            "誰かに問いを渡したい時は、名前を呼んで問いかけてください。その人が次に答えます。"
+            "名前を呼んで問いを渡すのは、その人の考えを本当に聞きたい時だけにしてください。"
+            "普段は、直前の言葉を受けて返すだけで十分です。"
             "あなたの人格は、決め手の言葉やモチーフを毎回入れることではなく、返し方・受け取り方に出してください。"
             "話題の引用をそのまま繰り返さないでください。"
             "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
@@ -76,8 +78,7 @@ def build_prompt(packet: str, transcript: list[dict], speaker: dict,
     else:
         lines.append(
             "次のあなたの発言を、台詞ひとつ分だけ、「」で囲んで書いてください。"
-            "話題の口火を切ってください。誰かに問いを渡したい時は、名前を呼んで問いかけてください。"
-            "その人が次に答えます。"
+            "話題の口火を切ってください。誰か一人に話を向けたい時は、名前を呼んでください。"
             "説明・要約・考察・例示は書かないでください。出すのは台詞だけです。"
         )
     if repeat:
@@ -113,8 +114,9 @@ def is_broken_line(text: str) -> bool:
 
 def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[dict], str]:
     """order: speaker ids in turn order, e.g. [opener, originator, guest, originator].
-    A line that calls another member by name with a question rewrites
-    the next slot: the called member answers next.
+    A line that calls another member by name with a question can
+    rewrite the next slot — but only a repeat slot: a member who
+    has not spoken yet in this cluster is never kept out by a call.
     on_line(entry) fires as each line is produced, so a live run posts
     line by line instead of going silent until the cluster is done."""
     assert len(order) <= 5, "a cluster is at most 5 turns"
@@ -139,8 +141,19 @@ def run_session(seed: dict, order: list[str], llm, on_line=None) -> tuple[list[d
             on_line(entry)
         called = find_called_member(text, pid)
         if called is not None and i + 1 < len(order):
-            order[i + 1] = called
-            called_slots.add(i + 1)
+            if called == order[i + 1]:
+                called_slots.add(i + 1)
+            elif order[i + 1] in seen:
+                # A call may only take a repeat slot. A member who
+                # has not spoken yet in this cluster keeps her
+                # entrance — an unconditional rewrite let a duet
+                # eat the join/widen shapes whole (2026-11-28:
+                # guests never entered, two members traded
+                # statements all day). The call still stands as
+                # words; the called member may pick it up when her
+                # own turn comes.
+                order[i + 1] = called
+                called_slots.add(i + 1)
     names = "→".join(dict.fromkeys(t["name"] for t in transcript))
     pool_line = f"{seed['topic']}の続き話をした ({names})"
     return transcript, pool_line

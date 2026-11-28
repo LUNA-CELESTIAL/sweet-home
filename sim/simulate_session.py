@@ -59,23 +59,36 @@ def main():
     # wording, the one-phrase pressure is gone, and passing by name
     # is allowed.
     assert "受けて返して" in llm.prompts[1], llm.prompts[1]
-    assert "名前を呼んで問いかけて" in llm.prompts[1]
+    assert "本当に聞きたい時だけ" in llm.prompts[1], llm.prompts[1]
     assert "2〜3文でも" in llm.prompts[1]
     assert all("一言足して" not in p for p in llm.prompts), "old one-phrase pressure remains"
 
-    # A line that calls a member by name with a question rewrites
-    # the next turn: the called member answers, and their prompt
-    # says the question was for them.
+    # A call never steals a fresh entrance (2026-11-28): Luna
+    # calls Stella, but Spica — who has not spoken yet — keeps
+    # her slot, and Stella speaks when her own turn comes.
     llm3 = FakeLLM({
         "luna": ["「ステラ、昨日のPingの話、もう一度聞かせて？」"],
-        "stella": ["「いいわよ。静かな回線で、必要なものだけ残すの。」",
-                   "「決まりね、その選び方でいきましょう。」"],
+        "stella": ["「いいわよ。静かな回線で、必要なものだけ残すの。」"],
         "spica": ["「私は測る係をするよ。」"],
     })
     transcript3, _ = run_session(SEED, ["luna", "spica", "stella"], llm3)
     members3 = [t["member"] for t in transcript3]
-    assert members3 == ["luna", "stella", "stella"], members3
-    assert "あなたへの問いかけです" in llm3.prompts[1], llm3.prompts[1]
+    assert members3 == ["luna", "spica", "stella"], members3
+
+    # A call CAN take a repeat slot: in the exchange shape, Stella
+    # calls Spica into Luna's second slot, and Spica's prompt says
+    # the question was for her.
+    llm4 = FakeLLM({
+        "luna": ["「ステラ、昨日のPingの話、もう一度聞かせて？」"],
+        "stella": ["「いいわよ。スピカ、あなたはどう測る？」",
+                   "「決まりね、その選び方でいきましょう。」"],
+        "spica": ["「私は測る係をするよ。」"],
+    })
+    transcript4, _ = run_session(
+        SEED, ["luna", "stella", "luna", "stella"], llm4)
+    members4 = [t["member"] for t in transcript4]
+    assert members4 == ["luna", "stella", "spica", "stella"], members4
+    assert "あなたへの問いかけです" in llm4.prompts[2], llm4.prompts[2]
 
     # Cluster shapes by role (day.py): exchange / join / widen,
     # with the seed's source member in the originator's chair.

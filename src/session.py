@@ -30,6 +30,16 @@ def find_called_member(text: str, exclude_id: str) -> str | None:
 
 
 def build_packet(seed: dict) -> str:
+    if seed.get("prepared"):
+        # A weekly prepared theme (topics.py): no verbatim quote
+        # exists, and none is invented — the packet says where the
+        # topic came from, and the named sister opens it herself.
+        return (
+            f"話題: {seed['topic']}\n"
+            f"言い出し: {seed['sourceMember']}\n"
+            f"これは今週のテーマとして持ち寄られた話題。切り口: {seed.get('note', '')}\n"
+            f"状態: 今日ここから新しく開く話"
+        )
     return (
         f"話題: {seed['topic']}\n"
         f"言い出し: {seed['sourceMember']}\n"

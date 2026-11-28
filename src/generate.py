@@ -110,6 +110,10 @@ def thread_summary(llm, writer: dict, yesterday_seed: dict | None,
         out.setdefault("premise",
                        f"{yesterday_seed['sourceMember']}の{yesterday_seed['topic']}の話。"
                        f"「{yesterday_seed['quote']}」から始まった。")
+    # A seedless day (no diary seed was handed to today — a normal
+    # state since the hand-on rule, 2026-11-28) still needs its
+    # premise: a plain factual line from the day's own topics.
+    out.setdefault("premise", f"{topics_line}の話が、今日のリビングから始まった。")
     out.setdefault("progress", f"今日は{topics_line}の話をした。")
     new_seed = structure.get("seed")
     if new_seed:

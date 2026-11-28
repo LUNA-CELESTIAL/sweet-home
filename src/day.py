@@ -56,7 +56,8 @@ class Day:
                  yesterday_seed: dict | None, events: list[dict] | None = None,
                  out_dir: Path = Path("out"), voice=None, video=None,
                  line_gap_minutes=None, sleeper=None, llm_release=None,
-                 share_seed_loader=None, related_seed: dict | None = None):
+                 share_seed_loader=None, related_seed: dict | None = None,
+                 topic_seed_loader=None):
         self.llm = llm
         self.poster = poster
         self.date = date
@@ -75,6 +76,10 @@ class Day:
         # A past diary topic related to today's talk; the last
         # cluster of the day may return to it.
         self.related_seed = related_seed
+        # The day's prepared weekly theme (topics.py): the floor
+        # under the living room, used only when neither a share
+        # nor a diary seed gives the day its topic.
+        self.topic_seed_loader = topic_seed_loader
         self._living_seed: dict | None = None
         self._living_count = 0
         self.voice = voice
@@ -138,6 +143,11 @@ class Day:
                 except Exception:
                     share_seed = None
             self._living_seed = share_seed or self.seed
+            if self._living_seed is None and self.topic_seed_loader is not None:
+                try:
+                    self._living_seed = self.topic_seed_loader()
+                except Exception:
+                    self._living_seed = None
             if share_seed:
                 self.events.append({
                     "minutes": MORNING_MINUTES + 30,
@@ -205,9 +215,13 @@ class Day:
 
     def diary(self, site_export_path: Path | None = None):
         writer = writer_for(self.date)
+        consumed = {(s or {}).get("topic") for s in
+                    (self.seed, self._living_seed, self.related_seed)}
+        consumed.discard(None)
+        consumed.discard("")
         structure, _ = build_diary(
             self.date, self.events,
-            consumed_topic=(self.seed or {}).get("topic"))
+            consumed_topics=consumed or None)
         meta, md = diary_prose(self.llm, writer, self.date, self.events, structure,
                                yesterday_seed=self.seed)
         self._release()

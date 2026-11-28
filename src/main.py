@@ -276,6 +276,11 @@ def main():
                     if s.get("minutes", 0) > 9 * 60 + 30]
                 return _cycle.share_to_seed(shares[-1]) if shares else None
 
+            import topics as _topics
+
+            def topic_seed_loader(_today=today):
+                return _topics.topic_seed_for(ROOT / "out", _today.isoformat())
+
             day = Day(llm, poster, today,
                       fetch_today(cfg.get("WEATHER_AREA_CODE", "130000")),
                       seed, [],
@@ -284,7 +289,8 @@ def main():
                       sleeper=lambda m: time.sleep(m * 60),
                       llm_release=getattr(llm, "release", None),
                       share_seed_loader=share_seed_loader,
-                      related_seed=related)
+                      related_seed=related,
+                      topic_seed_loader=topic_seed_loader)
             executor = Executor(now_minutes, lambda m: time.sleep(m * 60),
                                 temp_c, float(cfg.get("GPU_TEMP_LIMIT_C", "85")),
                                 heavy_cooldown_minutes=float(

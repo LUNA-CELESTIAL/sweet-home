@@ -55,15 +55,16 @@ def _same_topic(a: str, b: str) -> bool:
 
 
 def build_diary(date: datetime.date, events: list[dict],
-                consumed_topic: str | None = None) -> tuple[dict, str]:
+                consumed_topics: set[str] | None = None) -> tuple[dict, str]:
     """events: {minutes, member, topic, quote (optional), open (optional)}
 
-    consumed_topic: the topic today itself was handed (yesterday's
-    seed). The diary never hands the same topic on again — a topic
-    the house spent a day on has had its day; tomorrow's talk comes
-    from a share, a related past topic, or a quiet day. (Without
-    this, the living room's open events re-seeded the same topic
-    every night and the house talked about it forever, 2026-11-28.)
+    consumed_topics: the topics today itself was handed (yesterday's
+    seed, a share, the day's prepared theme, a related past topic).
+    The diary never hands any of them on again — a topic the house
+    spent a day on has had its day; tomorrow's talk comes from a
+    share, a prepared theme, or a quiet day. (Without this, the
+    living room's open events re-seeded the same topic every night
+    and the house talked about it forever, 2026-11-28.)
     """
     writer = writer_for(date)
     sections: dict[str, list[dict]] = {}
@@ -90,9 +91,10 @@ def build_diary(date: datetime.date, events: list[dict],
 
     seed = None
     open_events = [e for e in events if e.get("open")]
-    if consumed_topic:
+    if consumed_topics:
         open_events = [e for e in open_events
-                       if not _same_topic(e.get("topic", ""), consumed_topic)]
+                       if not any(_same_topic(e.get("topic", ""), c)
+                                  for c in consumed_topics)]
     if open_events:
         last = open_events[-1]
         seed = {

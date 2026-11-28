@@ -11,8 +11,11 @@ State lives in out/ as plain JSON, written by the day itself:
 
 Seed priority for a day's living room:
   1. a fresh share from this morning (after the morning duty)
-  2. yesterday's diary seed
-  3. a related past diary topic (when the diary left nothing open)
+  2. yesterday's diary seed (only a topic that newly opened —
+     the diary never hands on a topic the day itself was handed)
+  3. the day's prepared weekly topic (topics.py), when one is
+     filed for the date — the floor under the living room
+  4. a related past diary topic (the day's last cluster)
 The morning duty always speaks from yesterday's seed; shares come
 after it by design (the greeting goes out, then the house reacts).
 """

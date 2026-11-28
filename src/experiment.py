@@ -42,6 +42,11 @@ trigger and no LoRA:
 The member's identity tags (outfit excluded) come from
 costume.py; the costume text arrives with the request, written
 beforehand by the Luna doing the verification.
+
+A fourth kind is not an experiment at all: a 週間テーマ：
+request files a week of prepared living-room topics (see
+topics.py). It runs no generation — the entries are stored and
+the watcher acknowledges them in the channel.
 """
 
 import json
@@ -50,6 +55,8 @@ import subprocess
 import time
 import urllib.request
 from pathlib import Path
+
+from topics import append_topics, parse_topics_request
 
 DEFAULT_IMAGE = "deformer_luna.png"
 
@@ -207,6 +214,20 @@ class ExperimentWatcher:
         self.state_path.write_text(
             json.dumps({"last_seen": self.last_seen}), encoding="utf-8")
 
+    def _post(self, text: str) -> None:
+        """A short acknowledgement back into the work channel."""
+        try:
+            req = urllib.request.Request(
+                f"https://discord.com/api/v10/channels/{self.channel_id}/messages",
+                data=json.dumps({"content": text}).encode("utf-8"),
+                headers={"Authorization": self.token,
+                         "Content-Type": "application/json",
+                         "User-Agent": "sweet-home/0.1"},
+                method="POST")
+            urllib.request.urlopen(req, timeout=30).read()
+        except Exception as e:
+            print(f"experiment watcher: ack post failed: {e}", flush=True)
+
     def poll_once(self) -> dict | None:
         try:
             messages = self.fetch(self.last_seen)
@@ -229,6 +250,15 @@ class ExperimentWatcher:
             self.last_seen = msg["id"]
             author = str((msg.get("author") or {}).get("id"))
             if author not in self.allowed:
+                continue
+            topics = parse_topics_request(msg.get("content", ""))
+            if topics is not None:
+                added = append_topics(self.out_dir, topics)
+                print(f"topics: weekly topics received ({added} new)",
+                      flush=True)
+                if added:
+                    self._post(f"週間テーマを受け取ったよ（{added}件）。"
+                               "その日のリビングで使うね。")
                 continue
             req = parse_request(msg.get("content", "")) or \
                 parse_pixel_request(msg.get("content", "")) or \
